@@ -17,6 +17,12 @@ export type SequenceBinding = { logicalId: number; sequenceId: number; setId: nu
 export type MacroSetConfig = { names: string[] };
 export type RapidTriggerType = "disabled" | "sync" | "front" | "back";
 export type RapidFireOverride = { override: boolean; triggerType: RapidTriggerType; divisor: number };
+export type ProfileVerification = "unverified" | "editor-validated" | "emulator-tested" | "hardware-tested";
+export type ProfileMetadata = Record<string, unknown> & {
+  generator?: string;
+  sources?: string[];
+  verification?: ProfileVerification;
+};
 export type StateSelector = {
   id: number; name: string; increment: number; decrement: number;
   min: number; max: number; initial: number; wrap: boolean;
@@ -33,6 +39,7 @@ export type Profile = {
   sequences: MacroSequence[];
   macroSets: MacroSetConfig;
   selectors: StateSelector[];
+  metadata?: ProfileMetadata;
 };
 
 export function localizeProfileMessage(message: string, locale: "ja" | "en") {
@@ -130,6 +137,14 @@ function transformFlags(transform: OutputTransform): number {
   return transform === "flipBoth" ? 12 : transform === "flipHorizontal" ? 4 : transform === "flipVertical" ? 8 : 0;
 }
 
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, stableJsonValue(item)]));
+  }
+  return value;
+}
+
 export function bindingsFor(profile: Profile, sequenceId: number) {
   return profile.sequenceBindings.filter((binding) => binding.sequenceId === sequenceId);
 }
@@ -217,13 +232,14 @@ export function compileProfile(profile: Profile): Uint8Array {
   const macroSets = [profile.macroSets.names.length, 0];
   const profileSettings = [profile.frameStep, 0];
 
-  const metadata = Array.from(new TextEncoder().encode(JSON.stringify({
+  const metadata = Array.from(new TextEncoder().encode(JSON.stringify(stableJsonValue({
+    ...profile.metadata,
     schemaVersion: 1, name: profile.name, description: profile.description,
     sequenceNames: Object.fromEntries(profile.sequences.map((s) => [s.id, s.name])),
     macroSetNames: profile.macroSets.names,
     selectorNames: Object.fromEntries(profile.selectors.map((s) => [s.id, s.name])),
     selectorStateNames: Object.fromEntries(profile.selectors.map((s) => [s.id, s.stateNames])),
-  })));
+  }))));
   const payload = [
     ...section(0x01, direct), ...section(0x02, bindings), ...section(0x03, definitions),
     ...section(0x04, selectors), ...section(0x05, rapid), ...section(0x06, macroSets), ...section(0x07, profileSettings), ...section(0x7f, metadata),
@@ -358,6 +374,7 @@ export function parseProfile(bytes: Uint8Array): Profile {
   }
 
   let name = "Imported Profile", description = "";
+  let metadata: ProfileMetadata | undefined;
   const meta = sections.get(0x7f);
   if (meta) {
     try {
@@ -370,9 +387,12 @@ export function parseProfile(bytes: Uint8Array): Profile {
         const stateNames = parsed.selectorStateNames?.[s.id];
         if (Array.isArray(stateNames)) s.stateNames = s.outputs.map((_, index) => typeof stateNames[index] === "string" ? stateNames[index] : s.stateNames[index]);
       });
+      const { schemaVersion: _schemaVersion, name: _name, description: _description, sequenceNames: _sequenceNames, macroSetNames: _macroSetNames, selectorNames: _selectorNames, selectorStateNames: _selectorStateNames, ...extra } = parsed;
+      void _schemaVersion; void _name; void _description; void _sequenceNames; void _macroSetNames; void _selectorNames; void _selectorStateNames;
+      if (Object.keys(extra).length) metadata = extra;
     } catch { /* optional metadata */ }
   }
-  const profile: Profile = { schemaVersion: 1, name, description, frameStep, mappings, rapidFire, sequenceBindings, sequences, macroSets, selectors };
+  const profile: Profile = { schemaVersion: 1, name, description, frameStep, mappings, rapidFire, sequenceBindings, sequences, macroSets, selectors, ...(metadata ? { metadata } : {}) };
   const errors = validateProfile(profile);
   if (errors.length) throw new Error(errors[0]);
   return profile;

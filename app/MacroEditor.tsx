@@ -7,6 +7,7 @@ import {
   bindingsFor, compileProfile, createDefaultProfile, LOGICAL_BUTTONS, MacroSequence,
   localizeProfileMessage, MAX_SEQUENCE_BINDINGS, normalizeProfile, OUTPUTS, OutputTransform, parseProfile, Profile, SequenceBinding, StateSelector, validateProfile,
 } from "./profile";
+import { parseProfileJsonText, ProfileJsonError, serializeProfileJson } from "./profileJson";
 import { listStoredProfiles, removeStoredProfile, saveStoredProfile, StoredProfile } from "./profileStore";
 import { deleteTick, insertTick, maskAtTick, setTickMask, totalTicks } from "./sequenceEditing";
 import { SharedProfiles } from "./SharedProfiles";
@@ -19,7 +20,7 @@ function maskLabels(mask: number) { return OUTPUTS.filter((_, i) => mask & (1 <<
 function transformAxes(transform: OutputTransform) { return { horizontal: transform === "flipHorizontal" || transform === "flipBoth", vertical: transform === "flipVertical" || transform === "flipBoth" }; }
 function transformFromAxes(horizontal: boolean, vertical: boolean): OutputTransform { return horizontal && vertical ? "flipBoth" : horizontal ? "flipHorizontal" : vertical ? "flipVertical" : "none"; }
 function newProfileId() { return crypto.randomUUID(); }
-function profileFileName(name: string) { return `${name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_") || "profile"}.eamacro`; }
+function profileFileName(name: string, extension = ".eamacro") { return `${name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_") || "profile"}${extension}`; }
 
 type SaveFileHandle = { createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> };
 type FilePickerWindow = Window & { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<SaveFileHandle> };
@@ -51,8 +52,10 @@ export function MacroEditor() {
   const [hydrated, setHydrated] = useState(false);
   const [storedProfiles, setStoredProfiles] = useState<StoredProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
+  const binaryFileRef = useRef<HTMLInputElement>(null);
+  const jsonFileRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDetailsElement>(null);
+  const fileMenuRef = useRef<HTMLDetailsElement>(null);
   const toastTimerRef = useRef<number | null>(null);
   const tRef = useRef(t);
   tRef.current = t;
@@ -107,8 +110,9 @@ export function MacroEditor() {
     function closeOnOutsideClick(event: PointerEvent) {
       const target = event.target as Node;
       if (profileMenuRef.current && !profileMenuRef.current.contains(target)) profileMenuRef.current.open = false;
+      if (fileMenuRef.current && !fileMenuRef.current.contains(target)) fileMenuRef.current.open = false;
     }
-    function closeOnEscape(event: KeyboardEvent) { if (event.key === "Escape") closeProfileMenus(); }
+    function closeOnEscape(event: KeyboardEvent) { if (event.key === "Escape") closeMenus(); }
     document.addEventListener("pointerdown", closeOnOutsideClick); document.addEventListener("keydown", closeOnEscape);
     return () => { document.removeEventListener("pointerdown", closeOnOutsideClick); document.removeEventListener("keydown", closeOnEscape); };
   }, []);
@@ -127,33 +131,52 @@ export function MacroEditor() {
     toastTimerRef.current = window.setTimeout(() => { setToast(""); toastTimerRef.current = null; }, 2800);
   }
 
-  function closeProfileMenus() {
+  function closeMenus() {
     if (profileMenuRef.current) profileMenuRef.current.open = false;
+    if (fileMenuRef.current) fileMenuRef.current.open = false;
   }
 
-  async function saveAs() {
+  function errorMessage(error: unknown, fallbackJa: string, fallbackEn: string) {
+    if (error instanceof ProfileJsonError) return error.localizedMessage(locale);
+    return error instanceof Error ? localizeProfileMessage(error.message, locale) : t(fallbackJa, fallbackEn);
+  }
+
+  async function saveBlob(blob: Blob, suggestedName: string, description: string, mimeType: string, extensions: string[]) {
+    const pickerWindow = window as FilePickerWindow;
+    if (pickerWindow.showSaveFilePicker) {
+      const handle = await pickerWindow.showSaveFilePicker({ suggestedName, types: [{ description, accept: { [mimeType]: extensions } }] });
+      const writable = await handle.createWritable(); await writable.write(blob); await writable.close();
+      showNotice(t(`${suggestedName}を保存しました`, `Saved ${suggestedName}`));
+      return;
+    }
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href; link.download = suggestedName;
+    document.body.append(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(href), 0);
+    showNotice(t(`${suggestedName}をダウンロードしました`, `Downloaded ${suggestedName}`));
+  }
+
+  async function saveAsMacro() {
+    closeMenus();
     try {
       const bytes = compileProfile(profile);
-      const blob = new Blob([bytes as BlobPart], { type: "application/octet-stream" });
-      const pickerWindow = window as FilePickerWindow;
-      if (pickerWindow.showSaveFilePicker) {
-        const handle = await pickerWindow.showSaveFilePicker({ suggestedName: profileFileName(profile.name), types: [{ description: "EASY ARCADE Macro", accept: { "application/octet-stream": [".eamacro"] } }] });
-        const writable = await handle.createWritable(); await writable.write(blob); await writable.close();
-        setNotice(t(`${profileFileName(profile.name)}を保存しました`, `Saved ${profileFileName(profile.name)}`)); return;
-      }
-      const href = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = profileFileName(profile.name);
-      link.click(); URL.revokeObjectURL(href);
-      setNotice(t(`${bytes.length.toLocaleString()} bytesの.eamacroを保存しました`, `Saved .eamacro (${bytes.length.toLocaleString()} bytes)`));
-    } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(error instanceof Error ? localizeProfileMessage(error.message, locale) : t("保存できませんでした", "Could not save the profile")); }
+      await saveBlob(new Blob([bytes as BlobPart], { type: "application/vnd.easy-arcade.macro" }), profileFileName(profile.name), "EASY ARCADE Macro", "application/vnd.easy-arcade.macro", [".eamacro"]);
+    } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(errorMessage(error, "保存できませんでした", "Could not save the profile")); }
+  }
+
+  async function saveAsJson() {
+    closeMenus();
+    try {
+      const json = serializeProfileJson(profile);
+      await saveBlob(new Blob([json], { type: "application/vnd.easy-arcade.macro+json;charset=utf-8" }), profileFileName(profile.name, ".eamacro.json"), "EASY ARCADE Profile JSON", "application/vnd.easy-arcade.macro+json", [".eamacro.json", ".json"]);
+    } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(errorMessage(error, "保存できませんでした", "Could not save the profile")); }
   }
 
   function activateProfile(entry: StoredProfile) {
     setActiveProfileId(entry.id); setProfile(clone(entry.profile));
     setSelectedSequence(0); setSelectedSelector(0); setSelectedMacroSet(0);
-    closeProfileMenus();
+    closeMenus();
   }
 
   function addStoredProfile(nextProfile: Profile, message: string) {
@@ -163,13 +186,19 @@ export function MacroEditor() {
     setNotice(message);
   }
 
-  async function importFile(event: ChangeEvent<HTMLInputElement>) {
+  function openImport(format: "json" | "binary") {
+    closeMenus();
+    (format === "json" ? jsonFileRef : binaryFileRef).current?.click();
+  }
+
+  async function importFile(event: ChangeEvent<HTMLInputElement>, format: "json" | "binary") {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-      const imported = parseProfile(new Uint8Array(await file.arrayBuffer()));
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const imported = format === "json" ? parseProfileJsonText(new TextDecoder().decode(bytes)) : parseProfile(bytes);
       addStoredProfile(imported, t(`${file.name}を新しいプロファイルとして読み込みました`, `Opened ${file.name} as a new profile`));
-    } catch (error) { setNotice(error instanceof Error ? localizeProfileMessage(error.message, locale) : t("読み込めませんでした", "Could not open the profile")); }
+    } catch (error) { setNotice(errorMessage(error, "読み込めませんでした", "Could not open the profile")); }
     event.target.value = "";
   }
 
@@ -210,7 +239,7 @@ export function MacroEditor() {
     setProfile(createDefaultProfile());
     setSelectedSequence(0); setSelectedSelector(0); setSelectedMacroSet(0); setTab("mapping");
     setNotice(t("プロファイルを初期化しました", "Profile reset"));
-    closeProfileMenus();
+    closeMenus();
   }
 
   function createProfile() { addStoredProfile(createDefaultProfile(), t("新しいプロファイルを作成しました", "Created a new profile")); }
@@ -258,11 +287,20 @@ export function MacroEditor() {
           <h1>EASY ARCADE Macro Studio</h1>
         </div>
         <div className="header-actions">
-          <input ref={fileRef} type="file" accept=".eamacro" hidden onChange={importFile} />
+          <input ref={jsonFileRef} type="file" accept=".eamacro.json,.json,application/vnd.easy-arcade.macro+json,application/json" hidden onChange={(event) => void importFile(event, "json")} />
+          <input ref={binaryFileRef} type="file" accept=".eamacro,application/vnd.easy-arcade.macro" hidden onChange={(event) => void importFile(event, "binary")} />
           <LanguageSwitch />
           <Link className="help-link" href="/help" title={t("ヘルプ", "Help")} aria-label={t("ヘルプ", "Help")}>?</Link>
-          <button className="file-action" title={t("プロファイルを読み込む", "Import profile")} aria-label={t("プロファイルを読み込む", "Import profile")} onClick={() => fileRef.current?.click()}><span aria-hidden="true">↧</span></button>
-          <button className="file-action" title={t("プロファイルを書き出す", "Export profile")} aria-label={t("プロファイルを書き出す", "Export profile")} onClick={saveAs} disabled={errors.length > 0}><span aria-hidden="true">↥</span></button>
+          <details className="file-menu" ref={fileMenuRef}>
+            <summary className="file-action" title={t("ファイル操作", "File actions")} aria-label={t("ファイル操作", "File actions")}><span className="file-menu-icon" aria-hidden="true"><i /><i /><i /></span></summary>
+            <div className="file-menu-popover">
+              <button type="button" onClick={() => openImport("json")}><span>{t("JSONインポート", "Import JSON")}</span><small>.eamacro.json</small></button>
+              <button type="button" onClick={saveAsJson} disabled={errors.length > 0}><span>{t("JSONエクスポート", "Export JSON")}</span><small>.eamacro.json</small></button>
+              <div className="file-menu-divider" />
+              <button type="button" onClick={() => openImport("binary")}><span>{t("バイナリインポート", "Import binary")}</span><small>.eamacro</small></button>
+              <button type="button" onClick={saveAsMacro} disabled={errors.length > 0}><span>{t("バイナリエクスポート", "Export binary")}</span><small>.eamacro</small></button>
+            </div>
+          </details>
         </div>
       </header>
 

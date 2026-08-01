@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://studio.easy-arcade.net/easy-arcade-profile.schema.json",
+  "title": "EASY ARCADE Profile JSON",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schemaVersion", "name", "description", "frameStep", "mappings", "rapidFire", "macroSets", "sequences", "bindings", "selectors"],
+  "properties": {
+    "format": { "const": "easy-arcade-profile" },
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "frameStep": { "type": "integer", "minimum": 1, "maximum": 255 },
+    "mappings": { "$ref": "#/$defs/mappings" },
+    "rapidFire": { "$ref": "#/$defs/rapidFire" },
+    "macroSets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0, "maximum": 15 },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "sequences": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "loopStart", "steps"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0, "maximum": 254 },
+          "name": { "type": "string" },
+          "loopStart": { "type": "integer", "minimum": 0, "maximum": 254 },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 255,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["outputs", "ticks"],
+              "properties": {
+                "outputs": { "$ref": "#/$defs/outputList" },
+                "ticks": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["logicalButton", "sequenceId", "setId", "loop", "cancelOnRelease", "transform"],
+        "properties": {
+          "logicalButton": { "$ref": "#/$defs/logicalButton" },
+          "sequenceId": { "type": "integer", "minimum": 0, "maximum": 254 },
+          "setId": { "type": "integer", "minimum": 0, "maximum": 15 },
+          "loop": { "type": "boolean" },
+          "cancelOnRelease": { "type": "boolean" },
+          "transform": { "enum": ["none", "flipHorizontal", "flipVertical", "flipBoth"] }
+        }
+      }
+    },
+    "selectors": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "incrementButton", "decrementButton", "minimum", "maximum", "initial", "wrap", "neutralFrames", "states"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "name": { "type": "string" },
+          "incrementButton": { "$ref": "#/$defs/logicalButton" },
+          "decrementButton": { "$ref": "#/$defs/logicalButton" },
+          "minimum": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "maximum": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "initial": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "wrap": { "type": "boolean" },
+          "neutralFrames": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "states": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "name", "outputs"],
+              "properties": {
+                "value": { "type": "integer", "minimum": 0, "maximum": 255 },
+                "name": { "type": "string" },
+                "outputs": { "$ref": "#/$defs/outputList" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "generator": { "type": "string" },
+        "sources": { "type": "array", "items": { "type": "string", "format": "uri-reference" } },
+        "verification": { "enum": ["unverified", "editor-validated", "emulator-tested", "hardware-tested"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "logicalButton": {
+      "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
+    },
+    "output": {
+      "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F"]
+    },
+    "outputList": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/output" }
+    },
+    "rapidFireSetting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["override", "triggerType", "divisor"],
+      "properties": {
+        "override": { "type": "boolean" },
+        "triggerType": { "enum": ["disabled", "sync", "front", "back"] },
+        "divisor": { "type": "integer", "minimum": 2, "maximum": 60 }
+      }
+    },
+    "mappings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
+      "properties": {
+        "COIN": { "$ref": "#/$defs/outputList" },
+        "START": { "$ref": "#/$defs/outputList" },
+        "UP": { "$ref": "#/$defs/outputList" },
+        "DOWN": { "$ref": "#/$defs/outputList" },
+        "LEFT": { "$ref": "#/$defs/outputList" },
+        "RIGHT": { "$ref": "#/$defs/outputList" },
+        "A": { "$ref": "#/$defs/outputList" },
+        "B": { "$ref": "#/$defs/outputList" },
+        "C": { "$ref": "#/$defs/outputList" },
+        "D": { "$ref": "#/$defs/outputList" },
+        "E": { "$ref": "#/$defs/outputList" },
+        "F": { "$ref": "#/$defs/outputList" },
+        "G": { "$ref": "#/$defs/outputList" },
+        "H": { "$ref": "#/$defs/outputList" },
+        "I": { "$ref": "#/$defs/outputList" },
+        "J": { "$ref": "#/$defs/outputList" },
+        "K": { "$ref": "#/$defs/outputList" },
+        "L": { "$ref": "#/$defs/outputList" }
+      }
+    },
+    "rapidFire": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
+      "properties": {
+        "COIN": { "$ref": "#/$defs/rapidFireSetting" },
+        "START": { "$ref": "#/$defs/rapidFireSetting" },
+        "UP": { "$ref": "#/$defs/rapidFireSetting" },
+        "DOWN": { "$ref": "#/$defs/rapidFireSetting" },
+        "LEFT": { "$ref": "#/$defs/rapidFireSetting" },
+        "RIGHT": { "$ref": "#/$defs/rapidFireSetting" },
+        "A": { "$ref": "#/$defs/rapidFireSetting" },
+        "B": { "$ref": "#/$defs/rapidFireSetting" },
+        "C": { "$ref": "#/$defs/rapidFireSetting" },
+        "D": { "$ref": "#/$defs/rapidFireSetting" },
+        "E": { "$ref": "#/$defs/rapidFireSetting" },
+        "F": { "$ref": "#/$defs/rapidFireSetting" },
+        "G": { "$ref": "#/$defs/rapidFireSetting" },
+        "H": { "$ref": "#/$defs/rapidFireSetting" },
+        "I": { "$ref": "#/$defs/rapidFireSetting" },
+        "J": { "$ref": "#/$defs/rapidFireSetting" },
+        "K": { "$ref": "#/$defs/rapidFireSetting" },
+        "L": { "$ref": "#/$defs/rapidFireSetting" }
+      }
+    }
+  }
+}

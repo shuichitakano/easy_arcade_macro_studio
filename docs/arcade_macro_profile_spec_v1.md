@@ -11,6 +11,7 @@
 - 最大16個のマクロセットと、セットごとのマクロ割り当て
 - 増減入力によって持続出力を切り替えるステートセレクタ
 - PCエディタと本体で交換する検証可能なバイナリプロファイル
+- 人間、PCエディタ、AI、外部ツールで交換できる編集用Profile JSON
 
 デフォルトプロファイルではCOIN〜Fを同名出力へ1対1で割り当て、G〜Lは出力なしとする。マクロとセレクタを使わない場合は既存動作と一致しなければならない。
 
@@ -23,6 +24,8 @@
 - `Total Size`は32ビットのままとし、将来の本体は受理上限を拡張してよい
 
 推奨MIME typeは `application/vnd.easy-arcade.macro` とする。
+
+編集用Profile JSONの推奨ファイル名は `*.eamacro.json`、推奨MIME typeは `application/vnd.easy-arcade.macro+json` とする。
 
 ## 3. 入出力
 
@@ -115,7 +118,133 @@
 
 すべて集中定義された実装定数とする。
 
-## 9. バイナリ形式
+## 9. EASY ARCADE Profile JSON
+
+EASY ARCADE Profile JSONは、プロファイルを編集・生成・交換するための標準テキスト形式である。AI専用形式ではなく、人間による手書き、PCエディタ、外部ツール、REST API、MCPなど、生成元を問わず同じ形式を使用する。「AI Recipe JSON」のような別形式は設けない。
+
+Profile JSONはUTF-8で保存する。推奨拡張子は`.eamacro.json`とする。EASY ARCADE本体が直接読み込む形式は引き続き`.eamacro`であり、Profile JSONはPCエディタまたは互換ツールで検証後、決定的に`.eamacro`へコンパイルする。
+
+Profile JSON自体に8192 bytesの上限は設けない。ただし、v1.0本体向けにコンパイルした`.eamacro`は第8章の件数上限および8192 bytesの全体上限を満たさなければならない。コンパイル結果が上限を超える場合は、変換せず明確なエラーを返す。
+
+### 9.1 基本構造
+
+トップレベルはJSON objectとし、次のフィールドを持つ。
+
+| Field | 必須 | 内容 |
+|---|---|---|
+| `format` | 必須 | 固定文字列`easy-arcade-profile` |
+| `schemaVersion` | 必須 | Profile JSON Schemaの整数バージョン。初期値は1 |
+| `name` | 必須 | プロファイル名 |
+| `description` | 必須 | 説明。空文字列可 |
+| `frameStep` | 必須 | 第6章の共通Frame Step |
+| `mappings` | 必須 | 論理ボタンから実基板出力への直接マッピング |
+| `rapidFire` | 必須 | 論理ボタンごとの連射設定 |
+| `macroSets` | 必須 | マクロセット定義 |
+| `sequences` | 必須 | シーケンス定義 |
+| `bindings` | 必須 | セットごとのシーケンス割り当て |
+| `selectors` | 必須 | ステートセレクタ定義 |
+| `metadata` | 任意 | 生成元、参照資料、検証状態など、実行に影響しない付加情報 |
+
+`schemaVersion`はProfile JSONの構造バージョンであり、`.eamacro`ヘッダのMajor/Minorとは独立する。本節の追加によって`.eamacro`のファイル形式バージョンは1.0から変更しない。
+
+### 9.2 名前による入出力表現
+
+Profile JSONでは、論理ボタンと実基板出力をビット番号や数値マスクではなく、第3章で定義した名前で記述する。
+
+- 論理ボタン名: `COIN`、`START`、`UP`、`DOWN`、`LEFT`、`RIGHT`、`A`〜`L`
+- 実基板出力名: `COIN`、`START`、`UP`、`DOWN`、`LEFT`、`RIGHT`、`A`〜`F`
+- 複数出力: 出力名のJSON array。出力なしは空array
+
+`mappings`と`rapidFire`は論理ボタン名をキーとするobjectとし、18個すべての論理ボタンを明示する。正規化して保存する際は、第3章のID順にキーと配列要素を並べる。
+
+シーケンスの各ステップは`outputs`と`ticks`を持つ。`outputs`は実基板出力名のarray、`ticks`は1〜65535の整数とする。JSON上でも継続時間の単位はフレームではなくtickであり、実フレーム長は`ticks × frameStep`である。
+
+### 9.3 マクロと割り当て
+
+`macroSets`の各要素は`id`と`name`を持つ。IDは0から連続し、要素順と一致しなければならない。
+
+`sequences`の各要素は`id`、`name`、`loopStart`、`steps`を持つ。`bindings`の各要素は`logicalButton`、`sequenceId`、`setId`、`loop`、`cancelOnRelease`、`transform`を持つ。`transform`は`none`、`flipHorizontal`、`flipVertical`、`flipBoth`のいずれかとする。
+
+シーケンス定義と割り当てはProfile JSONでも別テーブルとする。同じシーケンスを複数の論理ボタンや複数のマクロセットから参照でき、再生属性と出力変換は割り当てごとに保持する。
+
+### 9.4 ステートセレクタ
+
+`selectors`の各要素は`id`、`name`、`incrementButton`、`decrementButton`、`minimum`、`maximum`、`initial`、`wrap`、`neutralFrames`、`states`を持つ。`states`は状態値の昇順で並べ、各要素は`value`、`name`、`outputs`を持つ。`outputs`は実基板出力名のarrayとする。
+
+### 9.5 任意Metadata
+
+`metadata`は実行動作に影響してはならない。生成元を記録する場合は、形式名へ`AI`を付けず、たとえば次の任意フィールドを使用できる。
+
+| Field | 内容 |
+|---|---|
+| `generator` | 生成したアプリケーション、サービス、モデルなどの名称 |
+| `sources` | 参照したURLの文字列array |
+| `verification` | `unverified`、`editor-validated`、`emulator-tested`、`hardware-tested`のいずれか |
+
+未知のMetadataフィールドは無視してよい。生成元や検証状態を記録しないProfile JSONも有効である。
+
+### 9.6 最小例
+
+次は構造を示すために、18個の`mappings`と`rapidFire`のうち一部を省略した説明用の断片である。実際のファイルでは全論理ボタンを記述する。
+
+```json
+{
+  "format": "easy-arcade-profile",
+  "schemaVersion": 1,
+  "name": "Hadoken Sample",
+  "description": "右向きの波動拳入力",
+  "frameStep": 1,
+  "mappings": {
+    "A": ["A"],
+    "G": []
+  },
+  "rapidFire": {
+    "A": { "override": false, "triggerType": "disabled", "divisor": 2 },
+    "G": { "override": false, "triggerType": "disabled", "divisor": 2 }
+  },
+  "macroSets": [
+    { "id": 0, "name": "Ryu" }
+  ],
+  "sequences": [
+    {
+      "id": 0,
+      "name": "Hadoken",
+      "loopStart": 0,
+      "steps": [
+        { "outputs": ["DOWN"], "ticks": 1 },
+        { "outputs": ["DOWN", "RIGHT"], "ticks": 1 },
+        { "outputs": ["RIGHT", "A"], "ticks": 1 }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "logicalButton": "G",
+      "sequenceId": 0,
+      "setId": 0,
+      "loop": false,
+      "cancelOnRelease": false,
+      "transform": "none"
+    }
+  ],
+  "selectors": [],
+  "metadata": {
+    "generator": "example tool",
+    "verification": "unverified",
+    "sources": []
+  }
+}
+```
+
+### 9.7 検証と正規化
+
+Profile JSONにはJSON Schemaを提供する。読み込み時はJSON Schemaによる型・必須項目・列挙値の検証に加え、第8章の件数上限、ID重複、参照関係、出力範囲、ループ位置など、`.eamacro`生成時と同等の意味検証を行う。
+
+不明なトップレベルフィールドおよび実行に関係する不明フィールドは、入力ミスを検出するためエラーとする。`metadata`内の不明フィールドだけは許可する。
+
+正規化時は論理ボタン、出力、マクロセット、シーケンス、バインディング、セレクタを仕様上のID順へ並べ、同じProfile JSONから常に同一の`.eamacro`バイト列を生成する。Profile JSONから`.eamacro`へ変換した後、再度Profile JSONへ変換した場合、実行に影響しないMetadataを除いて同じ設定を復元できなければならない。
+
+## 10. バイナリ形式
 
 全整数はリトルエンディアン。ファイルヘッダは16 bytes固定であり、「4 bytesのファイルヘッダ」という旧記述は誤りとして廃止する。
 
@@ -199,7 +328,7 @@ UTF-8 JSONで、名前、説明、作者、対象ゲーム、タグ、シーケ�
 
 名称はすべて単一のUTF-8文字列とし、実機表示用の別名は設けない。表示能力に制限がある機種はMetadataを無視してよい。プロファイル名を表示する機種に合わせた文字種や長さを選ぶことはユーザー責任とする。Metadataも8192 bytesの全体上限に含む。この追加は任意Metadataの拡張であり、ファイル形式バージョンは1.0のままとする。
 
-## 10. 本体ランタイム
+## 11. 本体ランタイム
 
 検証済みの`.eamacro`バイト列をFlashまたはRAMに保持し、次だけをランタイムへ展開する。
 
@@ -214,15 +343,15 @@ UTF-8 JSONで、名前、説明、作者、対象ゲーム、タグ、シーケ�
 
 シーケンスはステップ遷移時に次ステップを読み、現在出力、残りtick、`Frame Step`内のフレーム位相をキャッシュする。毎フレームTLVを探索しない。
 
-## 11. 読み込みと原子的適用
+## 12. 読み込みと原子的適用
 
 全データ受信、ヘッダ、サイズ、CRC、全セクション、予約領域、参照関係、実装上限、マスク競合を検証してから現在設定と交換する。失敗時は現在設定と実行状態を変更しない。成功時は全シーケンスを停止し、全セレクタを初期値に戻し、次フレームから適用する。
 
 RP2040系のFlash保存では8KBを1スロットとし、別の空きスロットへ書き込み、CRC検証後に管理レコードを切り替える方式を推奨する。
 
-## 12. PCエディタ
+## 13. PCエディタ
 
-エディタ内部はJSON相当の編集モデルを使用する。ユーザー向け保存・再読込は`.eamacro`で完結させる。ブラウザ内ではIndexedDBに複数の作業プロファイルを保持し、切替、新規作成、複製、初期化、削除、自動保存に対応する。旧ローカルストレージの単一プロファイルが存在する場合は初回に移行してよい。
+エディタ内部はJSON相当の編集モデルを使用する。実機との交換には`.eamacro`、人間、AI、外部ツールとの編集データ交換には`.eamacro.json`を使用する。ブラウザ内ではIndexedDBに複数の作業プロファイルを保持し、切替、新規作成、複製、初期化、削除、自動保存に対応する。旧ローカルストレージの単一プロファイルが存在する場合は初回に移行してよい。
 
 UIはバイナリのセクション配置をそのまま見せず、次の責務に分ける。
 
@@ -236,7 +365,9 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 
 連射速度は2〜60のRate Divisorを数値入力し、割り当て一覧では`1/2 (30連)`のように60Hz基準の参考連射数を併記する。
 
-`.eamacro`の読み込みはブラウザ内の新しい作業プロファイルとして追加する。書き出しは対応ブラウザでOSの保存ダイアログを開き、ユーザーが任意の保存先とファイル名を選択できるようにする。非対応ブラウザでは通常のファイルダウンロードへフォールバックする。
+`.eamacro`および`.eamacro.json`の読み込みは、検証後にブラウザ内の新しい作業プロファイルとして追加する。`.eamacro.json`の読み込みエラーでは、可能な限り該当フィールドと理由を示す。
+
+標準の実機向け書き出しは`.eamacro`とする。Profile JSONの書き出しも提供し、対応ブラウザではOSの保存ダイアログを開いて、ユーザーが任意の保存先とファイル名を選択できるようにする。非対応ブラウザでは通常のファイルダウンロードへフォールバックする。
 
 同じシーケンス定義は複数の論理ボタンへ割り当ててよく、同じ論理ボタンから複数のシーケンスを起動してよい。反復、リリース属性、出力反転は各バインディングに属する。遅延違いの派生マクロは複製し、先頭に任意長の無出力ステップを追加して表現できる。
 
@@ -246,9 +377,9 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 
 生成順は`0x01`、`0x02`、`0x03`、`0x04`、`0x05`、`0x06`、`0x07`、`0x7F`とし、バインディングはLogical ID・Sequence ID順、シーケンスとセレクタはID順に出力する。同じ編集内容は同一バイト列にする。生成前に本体と同等の検証を行う。
 
-オンライン共有はv1.0の対象外だが、将来JSON編集モデルをDBへ保存できるようSchema VersionとMetadataを保持する。
+オンライン共有では、サーバー内部の保存形式としてProfile JSONまたは同等の正規化済みデータを使用できる。共有サイトからダウンロードする実機向け成果物は、検証済みProfile JSONからサーバーまたはエディタが生成した`.eamacro`とする。REST APIやMCPを追加する場合も、独自のAI専用形式を設けず、Profile JSONを共通の入出力形式とする。
 
-## 13. 受入条件
+## 14. 受入条件
 
 - デフォルトプロファイルが従来動作と一致する
 - 連射パルスがシーケンスを再トリガしない
@@ -262,3 +393,7 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 - 8KB超過、CRC不一致、不正参照、予約ビット、マスク競合を拒否する
 - 不正ファイル拒否後も現在プロファイルを維持する
 - `.eamacro`をエディタで保存し、再読込して同じ設定を復元できる
+- `.eamacro.json`をエディタで保存し、再読込して同じ設定を復元できる
+- Profile JSONの不正な型、未知フィールド、不正参照、定義件数上限超過を、`.eamacro`を生成せず拒否できる
+- 8192 bytesを超えるProfile JSONも読み込んで編集でき、コンパイル結果が8192 bytesを超える場合だけ`.eamacro`書き出しを拒否できる
+- 同じProfile JSONから常に同一の`.eamacro`バイト列を生成できる
