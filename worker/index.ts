@@ -44,6 +44,25 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
 
+function message(request: Request, ja: string, en: string) {
+  return request.headers.get("x-easy-arcade-language") === "en" ? en : ja;
+}
+
+function jsonError(request: Request, ja: string, en: string, status: number) {
+  return json({ error: message(request, ja, en) }, status);
+}
+
+function localizedProfileError(request: Request, error: unknown) {
+  const ja = error instanceof Error ? error.message : "プロファイルが不正です";
+  const translations: Record<string, string> = {
+    "プロファイルデータが不正です": "The profile data is invalid",
+    "プロファイルのサイズが不正です": "The profile size is invalid",
+    "AMAPファイルではありません": "This is not an AMAP file",
+    "プロファイルが破損しています": "The profile is corrupted",
+  };
+  return request.headers.get("x-easy-arcade-language") === "en" ? translations[ja] ?? "The profile is invalid" : ja;
+}
+
 function authenticatedUserId(request: Request) {
   const platformUserId = request.headers.get("oai-authenticated-user-id")?.trim();
   if (platformUserId) return platformUserId;
@@ -127,7 +146,7 @@ async function handleSharedProfiles(request: Request, env: Env, url: URL): Promi
     return json({ authenticated: Boolean(authenticatedUserId(request)), localPreview: isLocalRequest(request) });
   }
   if (!url.pathname.startsWith("/api/shared-profiles")) return null;
-  if (!env.DB) return json({ error: "共有ライブラリのデータベースを利用できません" }, 503);
+  if (!env.DB) return jsonError(request, "共有ライブラリのデータベースを利用できません", "The shared library database is unavailable", 503);
 
   const userId = authenticatedUserId(request);
   if (url.pathname === "/api/shared-profiles" && request.method === "GET") {
@@ -159,15 +178,15 @@ async function handleSharedProfiles(request: Request, env: Env, url: URL): Promi
   }
 
   if (url.pathname === "/api/shared-profiles" && request.method === "POST") {
-    if (!userId) return json({ error: "投稿するにはChatGPTでログインしてください" }, 401);
+    if (!userId) return jsonError(request, "投稿するにはChatGPTでログインしてください", "Sign in with ChatGPT to publish", 401);
     let body: Record<string, unknown>;
-    try { body = await request.json() as Record<string, unknown>; } catch { return json({ error: "送信内容が不正です" }, 400); }
+    try { body = await request.json() as Record<string, unknown>; } catch { return jsonError(request, "送信内容が不正です", "The submitted data is invalid", 400); }
     let bytes: Uint8Array;
-    try { bytes = decodeProfile(body.fileBase64); } catch (error) { return json({ error: error instanceof Error ? error.message : "プロファイルが不正です" }, 400); }
+    try { bytes = decodeProfile(body.fileBase64); } catch (error) { return json({ error: localizedProfileError(request, error) }, 400); }
     const authorName = cleanText(body.authorName, 40);
     const description = cleanText(body.description, 240);
     const tags = cleanTags(body.tags);
-    if (!authorName) return json({ error: "公開する作者名を入力してください" }, 400);
+    if (!authorName) return jsonError(request, "公開する作者名を入力してください", "Enter a public author name", 400);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const profileName = profileNameFromBytes(bytes);
@@ -181,7 +200,7 @@ async function handleSharedProfiles(request: Request, env: Env, url: URL): Promi
   const fileMatch = url.pathname.match(/^\/api\/shared-profiles\/([0-9a-f-]+)\/file$/i);
   if (fileMatch && request.method === "GET") {
     const row = await env.DB.prepare("SELECT profile_name, file_data FROM shared_profiles WHERE id = ?").bind(fileMatch[1]).first<{ profile_name: string; file_data: ArrayBuffer | Uint8Array | number[] }>();
-    if (!row) return json({ error: "プロファイルが見つかりません" }, 404);
+    if (!row) return jsonError(request, "プロファイルが見つかりません", "Profile not found", 404);
     const bytes = d1BlobBytes(row.file_data);
     const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     return new Response(body, { headers: { "content-type": "application/octet-stream", "content-length": String(bytes.length), "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(row.profile_name))}`, "cache-control": "public, max-age=300" } });
@@ -189,15 +208,15 @@ async function handleSharedProfiles(request: Request, env: Env, url: URL): Promi
 
   const itemMatch = url.pathname.match(/^\/api\/shared-profiles\/([0-9a-f-]+)$/i);
   if (itemMatch && request.method === "PATCH") {
-    if (!userId) return json({ error: "編集するにはChatGPTでログインしてください" }, 401);
+    if (!userId) return jsonError(request, "編集するにはChatGPTでログインしてください", "Sign in with ChatGPT to edit this profile", 401);
     const owned = await env.DB.prepare("SELECT id FROM shared_profiles WHERE id = ? AND owner_user_id = ?").bind(itemMatch[1], userId).first<{ id: string }>();
-    if (!owned) return json({ error: "編集できるのは自分の投稿だけです" }, 403);
+    if (!owned) return jsonError(request, "編集できるのは自分の投稿だけです", "You can edit only your own posts", 403);
     let body: Record<string, unknown>;
-    try { body = await request.json() as Record<string, unknown>; } catch { return json({ error: "送信内容が不正です" }, 400); }
+    try { body = await request.json() as Record<string, unknown>; } catch { return jsonError(request, "送信内容が不正です", "The submitted data is invalid", 400); }
     const authorName = cleanText(body.authorName, 40);
     const description = cleanText(body.description, 240);
     const tags = cleanTags(body.tags);
-    if (!authorName) return json({ error: "公開する作者名を入力してください" }, 400);
+    if (!authorName) return jsonError(request, "公開する作者名を入力してください", "Enter a public author name", 400);
     const statements = [
       env.DB.prepare("UPDATE shared_profiles SET description = ?, author_name = ?, tags_json = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?").bind(description, authorName, JSON.stringify(tags), new Date().toISOString(), itemMatch[1], userId),
       env.DB.prepare("DELETE FROM shared_profile_tags WHERE profile_id = ?").bind(itemMatch[1]),
@@ -208,9 +227,9 @@ async function handleSharedProfiles(request: Request, env: Env, url: URL): Promi
   }
 
   if (itemMatch && request.method === "DELETE") {
-    if (!userId) return json({ error: "削除するにはChatGPTでログインしてください" }, 401);
+    if (!userId) return jsonError(request, "削除するにはChatGPTでログインしてください", "Sign in with ChatGPT to delete this profile", 401);
     const owned = await env.DB.prepare("SELECT id FROM shared_profiles WHERE id = ? AND owner_user_id = ?").bind(itemMatch[1], userId).first<{ id: string }>();
-    if (!owned) return json({ error: "削除できるのは自分の投稿だけです" }, 403);
+    if (!owned) return jsonError(request, "削除できるのは自分の投稿だけです", "You can delete only your own posts", 403);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM shared_profile_tags WHERE profile_id = ?").bind(itemMatch[1]),
       env.DB.prepare("DELETE FROM shared_profiles WHERE id = ? AND owner_user_id = ?").bind(itemMatch[1], userId),
@@ -242,7 +261,7 @@ const worker = {
     } catch (error) {
       if (url.pathname.startsWith("/api/")) {
         console.error("Shared profile API error", error);
-        return json({ error: "共有ライブラリを一時的に利用できません" }, 503);
+        return jsonError(request, "共有ライブラリを一時的に利用できません", "The shared library is temporarily unavailable", 503);
       }
       throw error;
     }

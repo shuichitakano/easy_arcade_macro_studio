@@ -35,6 +35,63 @@ export type Profile = {
   selectors: StateSelector[];
 };
 
+export function localizeProfileMessage(message: string, locale: "ja" | "en") {
+  if (locale === "ja") return message;
+  const exact: Record<string, string> = {
+    "基本フレームステップが不正です": "The base frame step is invalid",
+    "シーケンスは64件までです": "A profile can contain up to 64 sequences",
+    "マクロセットは1〜16件必要です": "A profile must contain 1–16 macro sets",
+    "ステートセレクタは8件までです": "A profile can contain up to 8 state selectors",
+    "全シーケンスの合計は1024ステップまでです": "All sequences combined can contain up to 1,024 steps",
+    "マクロ割り当ての論理ボタンが不正です": "A macro assignment has an invalid logical button",
+    "マクロ割り当ての出力変換が不正です": "A macro assignment has an invalid output transform",
+    "マクロ割り当てのSet IDが不正です": "A macro assignment has an invalid Set ID",
+    "同じセット、論理ボタン、マクロの割り当てが重複しています": "A set contains a duplicate logical-button and macro assignment",
+    "AMAPファイルではありません": "This is not an AMAP file",
+    "ファイルが8KBを超えています": "The file is larger than 8 KB",
+    "未対応のファイルバージョンです": "This file version is not supported",
+    "ヘッダのサイズが不正です": "The header size is invalid",
+    "CRC32が一致しません": "The CRC32 does not match",
+    "セクションヘッダが途中で終了しています": "A section header is truncated",
+    "セクションが不正です": "A section is invalid",
+    "セクションが重複しています": "A section is duplicated",
+    "必須セクションがありません": "A required section is missing",
+    "Sequence Bindingの長さが不正です": "The Sequence Binding length is invalid",
+    "Profile Settingsセクションが不正です": "The Profile Settings section is invalid",
+    "Macro Setsセクションが不正です": "The Macro Sets section is invalid",
+    "シーケンス定義が途中で終了しています": "A sequence definition is truncated",
+    "ステップが途中で終了しています": "A step is truncated",
+    "シーケンス定義に余剰データがあります": "A sequence definition contains extra data",
+    "セレクタ定義が途中で終了しています": "A selector definition is truncated",
+    "状態出力が途中で終了しています": "A state output is truncated",
+    "セレクタ定義に余剰データがあります": "A selector definition contains extra data",
+    "Rapid Fire Overridesの長さが不正です": "The Rapid Fire Overrides length is invalid",
+  };
+  if (exact[message]) return exact[message];
+  const replacements: Array<[RegExp, string]> = [
+    [/^直接マッピングは(\d+)件必要です$/, "Direct mapping requires $1 entries"],
+    [/^連射設定は(\d+)件必要です$/, "Rapid-fire settings require $1 entries"],
+    [/^マクロ割り当ては(\d+)件までです$/, "A profile can contain up to $1 macro assignments"],
+    [/^ファイルが8KBを超えます（(\d+) bytes）$/, "The file is larger than 8 KB ($1 bytes)"],
+    [/^(.+)の出力マスクが不正です$/, "$1 has an invalid output mask"],
+    [/^(.+)の連射トリガタイプが不正です$/, "$1 has an invalid rapid-fire trigger type"],
+    [/^(.+)の連射速度が不正です$/, "$1 has an invalid rapid-fire rate"],
+    [/^シーケンスID (.+) が不正または重複しています$/, "Sequence ID $1 is invalid or duplicated"],
+    [/^(.+): ステップ数が範囲外です$/, "$1: the step count is out of range"],
+    [/^(.+): ループ開始位置が不正です$/, "$1: the loop start is invalid"],
+    [/^(.+): ステップが不正です$/, "$1: a step is invalid"],
+    [/^(.+)が未定義のシーケンスを参照しています$/, "$1 references an undefined sequence"],
+    [/^セレクタID (.+) が重複しています$/, "Selector ID $1 is duplicated"],
+    [/^(.+): 増加・減少ボタンが不正です$/, "$1: the increment or decrement button is invalid"],
+    [/^(.+): 状態範囲と出力数が一致しません$/, "$1: the state range does not match the output count"],
+    [/^(.+): ステート名と状態数が一致しません$/, "$1: the state-name count does not match the state count"],
+    [/^(.+): 状態は64件までです$/, "$1: a selector can contain up to 64 states"],
+    [/^(.+): 状態出力マスクが不正です$/, "$1: a state has an invalid output mask"],
+  ];
+  for (const [pattern, replacement] of replacements) if (pattern.test(message)) return message.replace(pattern, replacement);
+  return message;
+}
+
 function inheritedRapidFire(): RapidFireOverride[] {
   return LOGICAL_BUTTONS.map(() => ({ override: false, triggerType: "disabled", divisor: 2 }));
 }

@@ -18,6 +18,7 @@ test("renders EASY ARCADE Macro Studio", async () => {
   assert.match(html, /EASY ARCADE Macro Studio/i);
   assert.match(html, /<h1>EASY ARCADE Macro Studio<\/h1>/);
   assert.match(html, />共有<\/button>/);
+  assert.match(html, />English<\/button>/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 
@@ -47,5 +48,7 @@ test("renders help page", async () => {
   const html = await response.text();
   assert.match(html, /用語と仕組み/);
   assert.match(html, /編集画面/);
+  assert.match(html, /<h2>共有<\/h2>/);
+  assert.match(html, /閲覧とダウンロードにはログインが不要です/);
   assert.match(html, /エディタへ戻る/);
 });
