@@ -11,6 +11,7 @@ import { listStoredProfiles, removeStoredProfile, saveStoredProfile, StoredProfi
 import { deleteTick, insertTick, maskAtTick, setTickMask, totalTicks } from "./sequenceEditing";
 import { SharedProfiles } from "./SharedProfiles";
 import { LanguageSwitch, useI18n } from "./i18n";
+import { createStreetFighter2ChampionEditionProfile } from "../samples/streetFighter2ChampionEdition";
 
 type Tab = "mapping" | "macro" | "macrosets" | "selector" | "overview" | "share";
 
@@ -215,6 +216,10 @@ export function MacroEditor() {
 
   function createProfile() { addStoredProfile(createDefaultProfile(), t("新しいプロファイルを作成しました", "Created a new profile")); }
 
+  function createSampleProfile() {
+    addStoredProfile(createStreetFighter2ChampionEditionProfile(), t("ストII′サンプルを新しいプロファイルとして追加しました", "Added the SFII′ sample as a new profile"));
+  }
+
   function duplicateProfile() {
     const copied = clone(profile); copied.name = `${profile.name} ${t("コピー", "Copy")}`;
     addStoredProfile(copied, t("プロファイルを複製しました", "Duplicated the profile"));
@@ -271,6 +276,7 @@ export function MacroEditor() {
           <summary aria-label={t("プロファイルを選択", "Select profile")}>Profile</summary>
           <div className="profile-popover">
             <div className="profile-list" role="listbox" aria-label={t("保存済みプロファイル", "Saved profiles")}>{storedProfiles.map((entry) => <button role="option" aria-selected={entry.id === activeProfileId} className={entry.id === activeProfileId ? "active" : ""} onClick={() => activateProfile(entry)} key={entry.id}><span>{entry.profile.name}</span>{entry.id === activeProfileId && <b>✓</b>}</button>)}</div>
+            <div className="profile-samples"><span>{t("サンプルから作成", "Create from Sample")}</span><button onClick={createSampleProfile}>SFII′ Champion Edition</button></div>
           </div>
         </details>
         <input className="profile-name" aria-label={t("プロファイル名", "Profile name")} value={profile.name} onChange={(e) => update((d) => { d.name = e.target.value; })} />
