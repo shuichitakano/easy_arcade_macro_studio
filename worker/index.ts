@@ -97,21 +97,31 @@ function decodeProfile(encoded: unknown): Uint8Array {
 
 function profileNameFromBytes(bytes: Uint8Array): string {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let legacyName = "";
   let cursor = 16;
   while (cursor + 4 <= bytes.length) {
     const type = bytes[cursor];
     const length = view.getUint16(cursor + 2, true);
     const end = cursor + 4 + length;
     if (end > bytes.length) break;
-    if (type === 0x7f) {
+    if (type === 0x08 && length >= 10) {
+      const payload = cursor + 4;
+      const nameLength = view.getUint16(payload + 2, true);
+      if (bytes[payload] === 1 && bytes[payload + 1] === 0 && bytes[payload + 9] === 0 && payload + 10 + nameLength <= end) {
+        try {
+          const name = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(payload + 10, payload + 10 + nameLength)).trim();
+          if (name) return name.slice(0, 120);
+        } catch { /* malformed metadata is handled by the editor */ }
+      }
+    } else if (type === 0x7f) {
       try {
         const metadata = JSON.parse(new TextDecoder().decode(bytes.subarray(cursor + 4, end))) as { name?: unknown };
-        if (typeof metadata.name === "string" && metadata.name.trim()) return metadata.name.trim().slice(0, 120);
-      } catch { break; }
+        if (typeof metadata.name === "string" && metadata.name.trim()) legacyName = metadata.name.trim().slice(0, 120);
+      } catch { /* legacy prototype metadata */ }
     }
     cursor = end;
   }
-  return "Untitled Profile";
+  return legacyName || "Untitled Profile";
 }
 
 function cleanText(value: unknown, maxLength: number) {

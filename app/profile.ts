@@ -73,6 +73,8 @@ export function localizeProfileMessage(message: string, locale: "ja" | "en") {
     "状態出力が途中で終了しています": "A state output is truncated",
     "セレクタ定義に余剰データがあります": "A selector definition contains extra data",
     "Rapid Fire Overridesの長さが不正です": "The Rapid Fire Overrides length is invalid",
+    "Metadataセクションが不正です": "The Metadata section is invalid",
+    "MetadataのUTF-8が不正です": "The Metadata contains invalid UTF-8",
   };
   if (exact[message]) return exact[message];
   const replacements: Array<[RegExp, string]> = [
@@ -137,12 +139,80 @@ function transformFlags(transform: OutputTransform): number {
   return transform === "flipBoth" ? 12 : transform === "flipHorizontal" ? 4 : transform === "flipVertical" ? 8 : 0;
 }
 
-function stableJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableJsonValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, stableJsonValue(item)]));
+function encodedString(value: string) { return Array.from(new TextEncoder().encode(value)); }
+function appendEncodedString(target: number[], value: string) {
+  const bytes = encodedString(value);
+  u16(target, bytes.length);
+  target.push(...bytes);
+}
+
+function compileMetadata(profile: Profile): number[] {
+  const profileName = encodedString(profile.name);
+  const description = encodedString(profile.description);
+  const sequences = [...profile.sequences].sort((a, b) => a.id - b.id);
+  const selectors = [...profile.selectors].sort((a, b) => a.id - b.id);
+  const result = [1, 0];
+  u16(result, profileName.length);
+  u16(result, description.length);
+  result.push(sequences.length, profile.macroSets.names.length, selectors.length, 0, ...profileName, ...description);
+  sequences.forEach((sequence) => { result.push(sequence.id); appendEncodedString(result, sequence.name); });
+  profile.macroSets.names.forEach((name) => appendEncodedString(result, name));
+  selectors.forEach((selector) => {
+    const name = encodedString(selector.name);
+    result.push(selector.id); u16(result, name.length); result.push(selector.stateNames.length, ...name);
+    selector.stateNames.forEach((stateName) => appendEncodedString(result, stateName));
+  });
+  return result;
+}
+
+function decodeMetadataString(data: Uint8Array, offset: number, length: number): string {
+  if (offset + length > data.length) throw new Error("Metadataセクションが不正です");
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(data.subarray(offset, offset + length)); }
+  catch { throw new Error("MetadataのUTF-8が不正です"); }
+}
+
+function parseMetadata(data: Uint8Array, sequences: MacroSequence[], macroSets: MacroSetConfig, selectors: StateSelector[]) {
+  if (data.length < 10 || data[0] !== 1 || data[1] !== 0 || data[9] !== 0) throw new Error("Metadataセクションが不正です");
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const profileNameLength = view.getUint16(2, true), descriptionLength = view.getUint16(4, true);
+  const sequenceCount = data[6], setCount = data[7], selectorCount = data[8];
+  if (sequenceCount !== sequences.length || setCount !== macroSets.names.length || selectorCount !== selectors.length) throw new Error("Metadataセクションが不正です");
+  let cursor = 10;
+  const name = decodeMetadataString(data, cursor, profileNameLength); cursor += profileNameLength;
+  const description = decodeMetadataString(data, cursor, descriptionLength); cursor += descriptionLength;
+
+  const sequenceById = new Map(sequences.map((sequence) => [sequence.id, sequence]));
+  const seenSequenceIds = new Set<number>();
+  for (let index = 0; index < sequenceCount; index++) {
+    if (cursor + 3 > data.length) throw new Error("Metadataセクションが不正です");
+    const id = data[cursor], length = view.getUint16(cursor + 1, true); cursor += 3;
+    const sequence = sequenceById.get(id);
+    if (!sequence || seenSequenceIds.has(id)) throw new Error("Metadataセクションが不正です");
+    seenSequenceIds.add(id); sequence.name = decodeMetadataString(data, cursor, length); cursor += length;
   }
-  return value;
+
+  for (let index = 0; index < setCount; index++) {
+    if (cursor + 2 > data.length) throw new Error("Metadataセクションが不正です");
+    const length = view.getUint16(cursor, true); cursor += 2;
+    macroSets.names[index] = decodeMetadataString(data, cursor, length); cursor += length;
+  }
+
+  const selectorById = new Map(selectors.map((selector) => [selector.id, selector]));
+  const seenSelectorIds = new Set<number>();
+  for (let index = 0; index < selectorCount; index++) {
+    if (cursor + 4 > data.length) throw new Error("Metadataセクションが不正です");
+    const id = data[cursor], nameLength = view.getUint16(cursor + 1, true), stateCount = data[cursor + 3]; cursor += 4;
+    const selector = selectorById.get(id);
+    if (!selector || seenSelectorIds.has(id) || stateCount !== selector.outputs.length) throw new Error("Metadataセクションが不正です");
+    seenSelectorIds.add(id); selector.name = decodeMetadataString(data, cursor, nameLength); cursor += nameLength;
+    for (let stateIndex = 0; stateIndex < stateCount; stateIndex++) {
+      if (cursor + 2 > data.length) throw new Error("Metadataセクションが不正です");
+      const length = view.getUint16(cursor, true); cursor += 2;
+      selector.stateNames[stateIndex] = decodeMetadataString(data, cursor, length); cursor += length;
+    }
+  }
+  if (cursor !== data.length) throw new Error("Metadataセクションが不正です");
+  return { name, description };
 }
 
 export function bindingsFor(profile: Profile, sequenceId: number) {
@@ -232,17 +302,10 @@ export function compileProfile(profile: Profile): Uint8Array {
   const macroSets = [profile.macroSets.names.length, 0];
   const profileSettings = [profile.frameStep, 0];
 
-  const metadata = Array.from(new TextEncoder().encode(JSON.stringify(stableJsonValue({
-    ...profile.metadata,
-    schemaVersion: 1, name: profile.name, description: profile.description,
-    sequenceNames: Object.fromEntries(profile.sequences.map((s) => [s.id, s.name])),
-    macroSetNames: profile.macroSets.names,
-    selectorNames: Object.fromEntries(profile.selectors.map((s) => [s.id, s.name])),
-    selectorStateNames: Object.fromEntries(profile.selectors.map((s) => [s.id, s.stateNames])),
-  }))));
+  const metadata = compileMetadata(profile);
   const payload = [
     ...section(0x01, direct), ...section(0x02, bindings), ...section(0x03, definitions),
-    ...section(0x04, selectors), ...section(0x05, rapid), ...section(0x06, macroSets), ...section(0x07, profileSettings), ...section(0x7f, metadata),
+    ...section(0x04, selectors), ...section(0x05, rapid), ...section(0x06, macroSets), ...section(0x07, profileSettings), ...section(0x08, metadata),
   ];
   const total = 16 + payload.length;
   if (total > MAX_PROFILE_BYTES) throw new Error(`ファイルが8KBを超えます（${total} bytes）`);
@@ -375,22 +438,28 @@ export function parseProfile(bytes: Uint8Array): Profile {
 
   let name = "Imported Profile", description = "";
   let metadata: ProfileMetadata | undefined;
-  const meta = sections.get(0x7f);
-  if (meta) {
-    try {
-      const parsed = JSON.parse(new TextDecoder().decode(meta));
-      name = parsed.name || name; description = parsed.description || "";
-      sequences.forEach((s) => { s.name = parsed.sequenceNames?.[s.id] || s.name; });
-      if (Array.isArray(parsed.macroSetNames)) macroSets.names = macroSets.names.map((fallback, index) => typeof parsed.macroSetNames[index] === "string" ? parsed.macroSetNames[index] : fallback);
-      selectors.forEach((s) => {
-        s.name = parsed.selectorNames?.[s.id] || s.name;
-        const stateNames = parsed.selectorStateNames?.[s.id];
-        if (Array.isArray(stateNames)) s.stateNames = s.outputs.map((_, index) => typeof stateNames[index] === "string" ? stateNames[index] : s.stateNames[index]);
-      });
-      const { schemaVersion: _schemaVersion, name: _name, description: _description, sequenceNames: _sequenceNames, macroSetNames: _macroSetNames, selectorNames: _selectorNames, selectorStateNames: _selectorStateNames, ...extra } = parsed;
-      void _schemaVersion; void _name; void _description; void _sequenceNames; void _macroSetNames; void _selectorNames; void _selectorStateNames;
-      if (Object.keys(extra).length) metadata = extra;
-    } catch { /* optional metadata */ }
+  const compactMetadata = sections.get(0x08);
+  if (compactMetadata) {
+    const parsed = parseMetadata(compactMetadata, sequences, macroSets, selectors);
+    name = parsed.name || name; description = parsed.description;
+  } else {
+    const meta = sections.get(0x7f);
+    if (meta) {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(meta));
+        name = parsed.name || name; description = parsed.description || "";
+        sequences.forEach((s) => { s.name = parsed.sequenceNames?.[s.id] || s.name; });
+        if (Array.isArray(parsed.macroSetNames)) macroSets.names = macroSets.names.map((fallback, index) => typeof parsed.macroSetNames[index] === "string" ? parsed.macroSetNames[index] : fallback);
+        selectors.forEach((s) => {
+          s.name = parsed.selectorNames?.[s.id] || s.name;
+          const stateNames = parsed.selectorStateNames?.[s.id];
+          if (Array.isArray(stateNames)) s.stateNames = s.outputs.map((_, index) => typeof stateNames[index] === "string" ? stateNames[index] : s.stateNames[index]);
+        });
+        const { schemaVersion: _schemaVersion, name: _name, description: _description, sequenceNames: _sequenceNames, macroSetNames: _macroSetNames, selectorNames: _selectorNames, selectorStateNames: _selectorStateNames, ...extra } = parsed;
+        void _schemaVersion; void _name; void _description; void _sequenceNames; void _macroSetNames; void _selectorNames; void _selectorStateNames;
+        if (Object.keys(extra).length) metadata = extra;
+      } catch { /* optional legacy metadata */ }
+    }
   }
   const profile: Profile = { schemaVersion: 1, name, description, frameStep, mappings, rapidFire, sequenceBindings, sequences, macroSets, selectors, ...(metadata ? { metadata } : {}) };
   const errors = validateProfile(profile);

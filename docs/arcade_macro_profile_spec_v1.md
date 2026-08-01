@@ -111,12 +111,12 @@
 | マクロセット数 | 16 |
 | 全シーケンス合計ステップ数 | 1024 |
 | 1シーケンスの最大ステップ数 | 255 |
-| 1 tickの最大フレーム数 | 255 |
+| 1 tickの最大フレーム数 | 65535 |
 | ステートセレクタ数 | 8 |
 | 1セレクタの最大状態数 | 64 |
 | `.eamacro`全体サイズ | 8192 bytes |
 
-すべて集中定義された実装定数とする。
+すべて集中定義された実装定数とする。個別の件数上限は、全項目を同時に最大まで格納できることを保証しない。最終的な受理条件として、ファイル全体が8192 bytes以下でなければならない。
 
 ## 9. EASY ARCADE Profile JSON
 
@@ -182,6 +182,8 @@ Profile JSONでは、論理ボタンと実基板出力をビット番号や数�
 | `verification` | `unverified`、`editor-validated`、`emulator-tested`、`hardware-tested`のいずれか |
 
 未知のMetadataフィールドは無視してよい。生成元や検証状態を記録しないProfile JSONも有効である。
+
+Profile JSONの`metadata`は編集・生成・共有のための情報であり、`.eamacro`へは格納しない。実機表示に必要な名前と説明だけを、第10章のコンパクトMetadataへ変換する。
 
 ### 9.6 最小例
 
@@ -272,7 +274,7 @@ CRCはCRC-32/ISO-HDLC（poly `0x04C11DB7`、refin/refout true、init/xorout `0xF
 | `0x05` | Rapid Fire Overrides | 必須・1個 |
 | `0x06` | Macro Sets | 必須・1個 |
 | `0x07` | Profile Settings | 必須・1個 |
-| `0x7F` | UTF-8 JSON Metadata | 任意・最大1個 |
+| `0x08` | Compact UTF-8 Metadata | 任意・最大1個 |
 
 ### Direct Mapping
 
@@ -324,9 +326,53 @@ Payloadは2 bytes固定とする。
 
 ### Metadata
 
-UTF-8 JSONで、名前、説明、作者、対象ゲーム、タグ、シーケンス名、マクロセット名、セレクタ名、各セレクタのステート名などを格納できる。マクロセット名はSet ID順の文字列配列`macroSetNames`とする。ステート名はセレクタIDをキーとする文字列配列 `selectorStateNames` とし、State Selectorsセクション内の出力マスクと同じ順序で並べる。たとえばセレクタ名が `GEAR`、現在ステート名が `LOW` なら、対応機種は `GEAR: LOW` のように表示できる。
+MetadataはJSONではなく、長さ付きUTF-8文字列を連続配置するコンパクトなバイナリ形式とする。本体へJSONパーサを要求してはならない。
 
-名称はすべて単一のUTF-8文字列とし、実機表示用の別名は設けない。表示能力に制限がある機種はMetadataを無視してよい。プロファイル名を表示する機種に合わせた文字種や長さを選ぶことはユーザー責任とする。Metadataも8192 bytesの全体上限に含む。この追加は任意Metadataの拡張であり、ファイル形式バージョンは1.0のままとする。
+Payload先頭の固定ヘッダは10 bytesとする。
+
+| Offset | Size | Field | 内容 |
+|---:|---:|---|---|
+| 0 | 1 | Metadata Version | 1 |
+| 1 | 1 | Flags | 0 |
+| 2 | 2 | Profile Name Length | UTF-8 byte数 |
+| 4 | 2 | Description Length | UTF-8 byte数 |
+| 6 | 1 | Sequence Name Count | Sequence Definitionsの定義数と一致 |
+| 7 | 1 | Macro Set Name Count | Macro SetsのSet Countと一致 |
+| 8 | 1 | Selector Name Count | State Selectorsの定義数と一致 |
+| 9 | 1 | Reserved | 0 |
+
+固定ヘッダの直後に、Profile NameとDescriptionのUTF-8 byte列をこの順で置く。終端NULは付けない。
+
+続けてSequence Name Count個のシーケンス名レコードをSequence ID昇順で置く。
+
+| Size | Field |
+|---:|---|
+| 1 | Sequence ID |
+| 2 | Name Length |
+| 可変 | Name UTF-8 bytes |
+
+続けてMacro Set Name Count個のマクロセット名レコードをSet ID順で置く。Set IDは要素順から決まるため格納しない。
+
+| Size | Field |
+|---:|---|
+| 2 | Name Length |
+| 可変 | Name UTF-8 bytes |
+
+続けてSelector Name Count個のセレクタ名レコードをSelector ID昇順で置く。
+
+| Size | Field |
+|---:|---|
+| 1 | Selector ID |
+| 2 | Selector Name Length |
+| 1 | State Name Count |
+| 可変 | Selector Name UTF-8 bytes |
+| 可変 | State Name Records |
+
+各State Name Recordはuint16 Name LengthとUTF-8 byte列で構成し、State Selectorsセクション内の状態出力と同じ順序で並べる。State Name Countは対応するセレクタのState Countと一致しなければならない。
+
+すべてのuint16はリトルエンディアンとする。既知レコードの不足、余剰byte、ID重複、未定義ID、件数不一致、不正UTF-8を拒否する。名称は単一のUTF-8文字列とし、実機表示用の別名は設けない。表示能力に制限がある機種はMetadataセクション全体を無視してよい。たとえばセレクタ名が`GEAR`、現在ステート名が`LOW`なら、対応機種は`GEAR: LOW`のように表示できる。
+
+Metadataも8192 bytesの全体上限に含む。Profile JSONの`metadata`にある生成元、参照URL、検証状態などは`.eamacro`へ格納しない。
 
 ## 11. 本体ランタイム
 
@@ -375,7 +421,9 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 
 マクロ編集にはステップ表示に加え、横軸をtick、縦軸を12個の実基板出力とするピアノロール形式の「タイムライン」表示を設ける。別の要約タイムラインは設けない。1マスは1 tickとし、セル操作でそのtickの出力ビットをON/OFFできる。tickの前後挿入、削除、末尾追加に対応する。実フレーム長は`総tick数 × Frame Step`として併記する。64 tickを超えるシーケンスは64 tick単位で表示ページを分割し、その場合だけページ切替UIを表示する。ページは編集上の表示区切りであり、再生動作には影響しない。タイムライン編集後は、連続する同一出力マスクをステップへ再圧縮する。
 
-生成順は`0x01`、`0x02`、`0x03`、`0x04`、`0x05`、`0x06`、`0x07`、`0x7F`とし、バインディングはLogical ID・Sequence ID順、シーケンスとセレクタはID順に出力する。同じ編集内容は同一バイト列にする。生成前に本体と同等の検証を行う。
+生成順は`0x01`、`0x02`、`0x03`、`0x04`、`0x05`、`0x06`、`0x07`、`0x08`とし、バインディングはLogical ID・Sequence ID順、シーケンスとセレクタはID順に出力する。同じ編集内容は同一バイト列にする。生成前に本体と同等の検証を行う。
+
+初期試作エディタが生成したType `0x7F`のJSON Metadataは正式なv1.0形式に含めない。PCエディタは既存の共有データを移行するために限り読み込んでよいが、新規保存してはならない。EASY ARCADE本体はType `0x7F`へ対応する必要がない。
 
 オンライン共有では、サーバー内部の保存形式としてProfile JSONまたは同等の正規化済みデータを使用できる。共有サイトからダウンロードする実機向け成果物は、検証済みProfile JSONからサーバーまたはエディタが生成した`.eamacro`とする。REST APIやMCPを追加する場合も、独自のAI専用形式を設けず、Profile JSONを共通の入出力形式とする。
 
