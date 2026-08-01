@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LanguageSwitch, useI18n } from "../i18n";
 
 type Section = { title: string; paragraphs: string[] };
+const PROFILE_SCHEMA_URL = "https://studio.easy-arcade.net/easy-arcade-profile.schema.json";
 
 const content = {
   ja: {
@@ -31,6 +32,8 @@ const content = {
       { title: "割り当て一覧", paragraphs: ["論理ボタンごとの直接出力、連射、マクロ、ステートセレクタの割り当てをまとめて確認します。表示するマクロセットを切り替えて比較できます。"] },
       { title: "共有", paragraphs: ["現在のプロファイルを共有ライブラリへ公開したり、ほかのユーザーが公開したプロファイルをダウンロードまたはエディタへ読み込んだりできます。閲覧とダウンロードにはログインが不要です。", "投稿・編集・削除にはChatGPTでのログインが必要です。公開される作者情報は投稿時に入力した作者名だけで、ChatGPTの名前やメールアドレスは表示されません。"] },
     ] as Section[],
+    schemaTitle: "Profile JSON Schema",
+    schemaLead: "AIや外部ツールでProfile JSONを作成するときは、次のJSON Schemaを参照してください。",
     back: "エディタへ戻る",
     flowLabel: "入力変換の流れ",
   },
@@ -58,6 +61,8 @@ const content = {
       { title: "Assignment Overview", paragraphs: ["Review direct outputs, rapid fire, macros, and state-selector controls for every logical button. Switch the displayed macro set to compare assignments."] },
       { title: "Sharing", paragraphs: ["Publish the current profile to the shared library, or download and open profiles published by other users. Browsing and downloading do not require sign-in.", "Publishing, editing, and deleting require Sign in with ChatGPT. The only public author information is the alias entered when publishing; your ChatGPT name and email address are not shown."] },
     ] as Section[],
+    schemaTitle: "Profile JSON Schema",
+    schemaLead: "Use this JSON Schema when creating Profile JSON with AI or external tools.",
     back: "Back to editor",
     flowLabel: "Input conversion flow",
   },
@@ -73,6 +78,7 @@ export function HelpContent() {
       {page.concepts.map((section, index) => <section className="help-section" key={section.title}><h2>{section.title}</h2>{index === 0 && <div className="concept-flow" aria-label={page.flowLabel}><span>{page.flow[0]}</span><b>→</b><span>{page.flow[1]}</span><b>→</b><span>{page.flow[2]}</span></div>}{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
       <h1 className="help-subheading">{page.editorsTitle}</h1><p className="help-lead">{page.editorsLead}</p>
       {page.editors.map((section) => <section className="help-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
+      <section className="help-section schema-reference"><h2>{page.schemaTitle}</h2><p>{page.schemaLead}</p><a href={PROFILE_SCHEMA_URL}>{PROFILE_SCHEMA_URL}</a></section>
     </article>
   </main>;
 }
