@@ -53,10 +53,6 @@ button { cursor: pointer; }
 .profile-list button:hover { background: var(--subtle); }
 .profile-list button.active { background: var(--accent-soft); color: #1d4ed8; }
 .profile-list button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.profile-samples { margin-top: 4px; padding: 8px 2px 2px; border-top: 1px solid var(--line); }
-.profile-samples > span { padding: 0 8px 4px; display: block; color: var(--muted); font-size: 10px; font-weight: 650; }
-.profile-samples button { width: 100%; min-height: 34px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font-size: 12px; text-align: left; }
-.profile-samples button:hover { background: var(--subtle); }
 .profile-row-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; }
 .profile-row-actions button { height: 30px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; }
 .profile-row-actions button:hover { background: var(--subtle); color: var(--text); }

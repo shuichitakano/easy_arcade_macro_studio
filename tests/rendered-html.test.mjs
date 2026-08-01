@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileProfile, parseProfile } from "../app/profile.ts";
-import { createStreetFighter2ChampionEditionProfile } from "../samples/streetFighter2ChampionEdition.ts";
 
 async function render(path = "/", extraEnv = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -22,18 +20,6 @@ test("renders EASY ARCADE Macro Studio", async () => {
   assert.match(html, />共有<\/button>/);
   assert.match(html, />English<\/button>/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
-});
-
-test("builds the Street Fighter II Champion Edition sample", () => {
-  const profile = createStreetFighter2ChampionEditionProfile();
-  const bytes = compileProfile(profile);
-  const parsed = parseProfile(bytes);
-  assert.equal(profile.macroSets.names.length, 12);
-  assert.equal(profile.sequences.length, 37);
-  assert.ok(bytes.length < 8192);
-  assert.deepEqual(parsed.macroSets.names, profile.macroSets.names);
-  assert.equal(parsed.sequenceBindings.length, profile.sequenceBindings.length);
-  assert.ok(profile.sequenceBindings.some((binding) => binding.transform === "flipHorizontal"));
 });
 
 test("returns D1 blob arrays as binary profile files", async () => {
