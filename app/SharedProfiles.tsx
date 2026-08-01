@@ -132,6 +132,7 @@ export function SharedProfiles({ profile, onImport, onNotice }: Props) {
       const href = URL.createObjectURL(await response.blob());
       const link = document.createElement("a"); link.href = href; link.download = fileName(item.profileName); link.click();
       URL.revokeObjectURL(href);
+      onNotice(`「${item.profileName}」をダウンロードしました`);
     } catch (error) { onNotice(error instanceof Error ? error.message : "ダウンロードできませんでした"); }
   }
 

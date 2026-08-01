@@ -48,11 +48,13 @@ export function MacroEditor() {
   const [selectedSelector, setSelectedSelector] = useState(0);
   const [selectedMacroSet, setSelectedMacroSet] = useState(0);
   const [notice, setNotice] = useState("新しいプロファイルを準備しました");
+  const [toast, setToast] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [storedProfiles, setStoredProfiles] = useState<StoredProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDetailsElement>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +80,10 @@ export function MacroEditor() {
     }
     void restoreProfiles();
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -112,6 +118,12 @@ export function MacroEditor() {
 
   function update(mutator: (draft: Profile) => void) {
     setProfile((current) => { const draft = clone(current); mutator(draft); return draft; });
+  }
+
+  function showNotice(message: string) {
+    setNotice(message); setToast(message);
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => { setToast(""); toastTimerRef.current = null; }, 2800);
   }
 
   function closeProfileMenus() {
@@ -346,7 +358,9 @@ export function MacroEditor() {
 
       {tab === "overview" && <AssignmentOverview profile={profile} selectedMacroSet={selectedMacroSet} setSelectedMacroSet={setSelectedMacroSet} />}
 
-      {tab === "share" && <SharedProfiles profile={profile} onImport={addStoredProfile} onNotice={setNotice} />}
+      {tab === "share" && <SharedProfiles profile={profile} onImport={(imported, message) => { addStoredProfile(imported, message); showNotice(message); }} onNotice={showNotice} />}
+
+      {toast && <div className="app-toast" role="status" aria-live="polite"><span aria-hidden="true">✓</span>{toast}</div>}
 
       <footer className="footerbar"><span className={errors.length ? "notice error" : "notice"}>{errors[0] || notice}</span></footer>
     </main>

@@ -217,6 +217,9 @@ button { cursor: pointer; }
 .empty-state h2 { margin: 0; font-size: 16px; }
 .footerbar { min-height: 36px; padding: 0 24px; display: flex; align-items: center; position: sticky; bottom: 0; border-top: 1px solid var(--line); background: rgba(255,255,255,.96); color: var(--muted); font-size: 11px; backdrop-filter: blur(8px); }
 .notice.error { color: var(--danger); }
+.app-toast { max-width: min(520px, calc(100vw - 32px)); min-height: 42px; padding: 10px 16px; display: flex; align-items: center; gap: 9px; position: fixed; top: 184px; left: 50%; z-index: 50; border: 1px solid #d4d4d8; border-radius: 9px; background: rgba(24,24,27,.94); color: #fff; box-shadow: 0 12px 30px rgba(24,24,27,.2); font-size: 12px; font-weight: 600; transform: translateX(-50%); animation: toast-in .16s ease-out; backdrop-filter: blur(8px); }
+.app-toast > span { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: #22c55e; font-size: 11px; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -7px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 .share-workspace { padding-bottom: 48px; background: #f8fafc; }
 .share-heading { min-height: 112px; padding: 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
@@ -330,4 +333,5 @@ a.share-account:hover { color: var(--accent); }
   .publish-actions { align-items: flex-end; flex-direction: column; }
   .library-tools { padding-inline: 16px; }
   .profile-library { padding-inline: 16px; grid-template-columns: 1fr; }
+  .app-toast { top: 208px; }
 }
