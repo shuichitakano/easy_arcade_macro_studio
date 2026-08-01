@@ -114,6 +114,13 @@ function safeFileName(name: string) {
   return `${name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_") || "profile"}.eamacro`;
 }
 
+function d1BlobBytes(value: ArrayBuffer | Uint8Array | number[]): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (Array.isArray(value)) return Uint8Array.from(value);
+  throw new Error("保存されたプロファイルデータが不正です");
+}
+
 async function handleSharedProfiles(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (!url.pathname.startsWith("/api/")) return null;
   if (url.pathname === "/api/auth/me" && request.method === "GET") {
@@ -173,9 +180,11 @@ async function handleSharedProfiles(request: Request, env: Env, url: URL): Promi
 
   const fileMatch = url.pathname.match(/^\/api\/shared-profiles\/([0-9a-f-]+)\/file$/i);
   if (fileMatch && request.method === "GET") {
-    const row = await env.DB.prepare("SELECT profile_name, file_data FROM shared_profiles WHERE id = ?").bind(fileMatch[1]).first<{ profile_name: string; file_data: ArrayBuffer }>();
+    const row = await env.DB.prepare("SELECT profile_name, file_data FROM shared_profiles WHERE id = ?").bind(fileMatch[1]).first<{ profile_name: string; file_data: ArrayBuffer | Uint8Array | number[] }>();
     if (!row) return json({ error: "プロファイルが見つかりません" }, 404);
-    return new Response(row.file_data, { headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(row.profile_name))}`, "cache-control": "public, max-age=300" } });
+    const bytes = d1BlobBytes(row.file_data);
+    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    return new Response(body, { headers: { "content-type": "application/octet-stream", "content-length": String(bytes.length), "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(row.profile_name))}`, "cache-control": "public, max-age=300" } });
   }
 
   const itemMatch = url.pathname.match(/^\/api\/shared-profiles\/([0-9a-f-]+)$/i);
