@@ -150,7 +150,7 @@ export function SharedProfiles({ profile, onImport, onNotice }: Props) {
   return (
     <section className="workspace share-workspace">
       <div className="share-heading">
-        <div><h2>共有プロファイル</h2><p>ほかのユーザーが公開した設定を、そのままエディタへ読み込めます。</p></div>
+        <div><h2>共有プロファイル</h2><p>現在のプロファイルを公開したり、ほかのユーザーが公開したプロファイルを読み込んだりできます。</p></div>
         <div className="share-heading-actions">
           {localPreview ? <span className="share-account">ローカル確認</span> : authenticated ? <a className="share-account" href="/signout-with-chatgpt?return_to=%2F%3Ftab%3Dshare">ログアウト</a> : <span className="share-account">閲覧はログイン不要</span>}
           <button className="button primary" onClick={beginPublishing}>現在のプロファイルを共有</button>
