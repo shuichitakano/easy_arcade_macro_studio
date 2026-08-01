@@ -20,10 +20,10 @@ test("renders EASY ARCADE Macro Studio", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 
-test("reports anonymous auth without exposing identity", async () => {
+test("uses a local preview identity without exposing personal data", async () => {
   const response = await render("/api/auth/me");
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { authenticated: false });
+  assert.deepEqual(await response.json(), { authenticated: true, localPreview: true });
 });
 
 test("renders help page", async () => {

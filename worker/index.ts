@@ -45,7 +45,14 @@ function json(data: unknown, status = 200) {
 }
 
 function authenticatedUserId(request: Request) {
-  return request.headers.get("oai-authenticated-user-id")?.trim() || null;
+  const platformUserId = request.headers.get("oai-authenticated-user-id")?.trim();
+  if (platformUserId) return platformUserId;
+  return isLocalRequest(request) ? "local-preview-user" : null;
+}
+
+function isLocalRequest(request: Request) {
+  const hostname = new URL(request.url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function crc32(data: Uint8Array): number {
@@ -110,7 +117,7 @@ function safeFileName(name: string) {
 async function handleSharedProfiles(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (!url.pathname.startsWith("/api/")) return null;
   if (url.pathname === "/api/auth/me" && request.method === "GET") {
-    return json({ authenticated: Boolean(authenticatedUserId(request)) });
+    return json({ authenticated: Boolean(authenticatedUserId(request)), localPreview: isLocalRequest(request) });
   }
   if (!url.pathname.startsWith("/api/shared-profiles")) return null;
   if (!env.DB) return json({ error: "共有ライブラリのデータベースを利用できません" }, 503);

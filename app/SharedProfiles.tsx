@@ -31,6 +31,7 @@ function responseError(value: unknown, fallback: string) {
 export function SharedProfiles({ profile, onImport, onNotice }: Props) {
   const [profiles, setProfiles] = useState<SharedProfile[]>([]);
   const [authenticated, setAuthenticated] = useState(false);
+  const [localPreview, setLocalPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
@@ -50,10 +51,11 @@ export function SharedProfiles({ profile, onImport, onNotice }: Props) {
         fetch("/api/auth/me", { headers: { accept: "application/json" } }),
       ]);
       const profileData = await profileResponse.json() as { profiles?: SharedProfile[]; error?: string };
-      const authData = await authResponse.json() as { authenticated?: boolean };
+      const authData = await authResponse.json() as { authenticated?: boolean; localPreview?: boolean };
       if (!profileResponse.ok) throw new Error(responseError(profileData, "共有プロファイルを読み込めませんでした"));
       setProfiles(profileData.profiles ?? []);
       setAuthenticated(Boolean(authData.authenticated));
+      setLocalPreview(Boolean(authData.localPreview));
     } catch (error) { setLoadError(error instanceof Error ? error.message : "共有プロファイルを読み込めませんでした"); }
     finally { setLoading(false); }
   }, []);
@@ -149,7 +151,7 @@ export function SharedProfiles({ profile, onImport, onNotice }: Props) {
       <div className="share-heading">
         <div><h2>共有プロファイル</h2><p>ほかのユーザーが公開した設定を、そのままエディタへ読み込めます。</p></div>
         <div className="share-heading-actions">
-          {authenticated ? <a className="share-account" href="/signout-with-chatgpt?return_to=%2F%3Ftab%3Dshare">ログアウト</a> : <span className="share-account">閲覧はログイン不要</span>}
+          {localPreview ? <span className="share-account">ローカル確認</span> : authenticated ? <a className="share-account" href="/signout-with-chatgpt?return_to=%2F%3Ftab%3Dshare">ログアウト</a> : <span className="share-account">閲覧はログイン不要</span>}
           <button className="button primary" onClick={beginPublishing}>現在のプロファイルを共有</button>
         </div>
       </div>
