@@ -16,7 +16,14 @@ test("renders EASY ARCADE Macro Studio", async () => {
   const html = await response.text();
   assert.match(html, /EASY ARCADE Macro Studio/i);
   assert.match(html, /<h1>EASY ARCADE Macro Studio<\/h1>/);
+  assert.match(html, />共有<\/button>/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
+});
+
+test("reports anonymous auth without exposing identity", async () => {
+  const response = await render("/api/auth/me");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { authenticated: false });
 });
 
 test("renders help page", async () => {

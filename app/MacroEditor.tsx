@@ -9,8 +9,9 @@ import {
 } from "./profile";
 import { listStoredProfiles, removeStoredProfile, saveStoredProfile, StoredProfile } from "./profileStore";
 import { deleteTick, insertTick, maskAtTick, setTickMask, totalTicks } from "./sequenceEditing";
+import { SharedProfiles } from "./SharedProfiles";
 
-type Tab = "mapping" | "macro" | "macrosets" | "selector" | "overview";
+type Tab = "mapping" | "macro" | "macrosets" | "selector" | "overview" | "share";
 
 function clone<T>(value: T): T { return structuredClone(value); }
 function maskLabels(mask: number) { return OUTPUTS.filter((_, i) => mask & (1 << i)); }
@@ -77,6 +78,12 @@ export function MacroEditor() {
     }
     void restoreProfiles();
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") !== "share") return;
+    const timer = window.setTimeout(() => setTab("share"), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -267,6 +274,7 @@ export function MacroEditor() {
         <button className={tab === "macrosets" ? "active" : ""} onClick={() => setTab("macrosets")}>マクロセット</button>
         <button className={tab === "selector" ? "active" : ""} onClick={() => setTab("selector")}>ステートセレクタ</button>
         <button className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>割り当て一覧</button>
+        <button className={tab === "share" ? "active" : ""} onClick={() => setTab("share")}>共有</button>
       </nav>
 
       {tab === "mapping" && (
@@ -337,6 +345,8 @@ export function MacroEditor() {
       )}
 
       {tab === "overview" && <AssignmentOverview profile={profile} selectedMacroSet={selectedMacroSet} setSelectedMacroSet={setSelectedMacroSet} />}
+
+      {tab === "share" && <SharedProfiles profile={profile} onImport={addStoredProfile} onNotice={setNotice} />}
 
       <footer className="footerbar"><span className={errors.length ? "notice error" : "notice"}>{errors[0] || notice}</span></footer>
     </main>
