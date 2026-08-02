@@ -349,6 +349,7 @@ export function MacroEditor() {
           </div>
         </div>
         <div className="profile-settings-row">
+          <label className="macro-tick"><span>1 tick =</span><input aria-label={t("1 tickあたりのフレーム数", "Frames per tick")} type="number" min="1" max="255" value={profile.frameStep} onChange={(event) => update((draft) => { draft.frameStep = Math.max(1, Math.min(255, Number(event.target.value))); })} /><span>{t("フレーム", "frames")}</span></label>
           <label className="profile-check"><input type="checkbox" checked={profile.twoPlayerOutputs} onChange={(event) => update((draft) => {
             draft.twoPlayerOutputs = event.target.checked;
             if (!event.target.checked) {
@@ -357,7 +358,6 @@ export function MacroEditor() {
               draft.selectors.forEach((item) => { item.outputs = item.outputs.map((mask) => mask & 0x0fff); });
             }
           })} /><span>2P</span></label>
-          <label className="macro-tick"><span>1 tick =</span><input aria-label={t("1 tickあたりのフレーム数", "Frames per tick")} type="number" min="1" max="255" value={profile.frameStep} onChange={(event) => update((draft) => { draft.frameStep = Math.max(1, Math.min(255, Number(event.target.value))); })} /><span>{t("フレーム", "frames")}</span></label>
         </div>
       </section>
 
