@@ -71,6 +71,7 @@ function OutputToggles({ mask, onChange, twoPlayerOutputs, allowed = 0xffffff }:
 export function MacroEditor() {
   const { locale, t } = useI18n();
   const [profile, setProfile] = useState<Profile>(() => createDefaultProfile());
+  const profileRef = useRef(profile);
   const [tab, setTab] = useState<Tab>("mapping");
   const [selectedSequence, setSelectedSequence] = useState(0);
   const [selectedSelector, setSelectedSelector] = useState(0);
@@ -105,7 +106,9 @@ export function MacroEditor() {
         if (cancelled) return;
         const preferredId = localStorage.getItem("easy-arcade-active-profile");
         const active = entries.find((entry) => entry.id === preferredId) ?? entries[0];
-        setStoredProfiles(entries); setActiveProfileId(active.id); setProfile(clone(active.profile)); setSelectedMacroSet(0);
+        const restoredProfile = clone(active.profile);
+        profileRef.current = restoredProfile;
+        setStoredProfiles(entries); setActiveProfileId(active.id); setProfile(restoredProfile); setSelectedMacroSet(0);
         setNotice(entries.length > 1 ? tRef.current(`${entries.length}件のプロファイルを復元しました`, `Restored ${entries.length} profiles`) : tRef.current("プロファイルを復元しました", "Profile restored"));
       } catch {
         if (!cancelled) setNotice(tRef.current("ブラウザ内保存を利用できないため、この画面だけで編集します", "Browser storage is unavailable; changes will remain on this page only"));
@@ -152,7 +155,10 @@ export function MacroEditor() {
   const selector = profile.selectors[selectedSelector];
 
   function update(mutator: (draft: Profile) => void) {
-    setProfile((current) => { const draft = clone(current); mutator(draft); return draft; });
+    const draft = clone(profileRef.current);
+    mutator(draft);
+    profileRef.current = draft;
+    setProfile(draft);
   }
 
   function showNotice(message: string) {
@@ -191,21 +197,25 @@ export function MacroEditor() {
   async function saveAsMacro() {
     closeMenus();
     try {
-      const bytes = compileProfile(profile);
-      await saveBlob(new Blob([bytes as BlobPart], { type: "application/vnd.easy-arcade.macro" }), profileFileName(profile.name), "EASY ARCADE Macro", "application/vnd.easy-arcade.macro", [".eamacro"]);
+      const currentProfile = profileRef.current;
+      const bytes = compileProfile(currentProfile);
+      await saveBlob(new Blob([bytes as BlobPart], { type: "application/vnd.easy-arcade.macro" }), profileFileName(currentProfile.name), "EASY ARCADE Macro", "application/vnd.easy-arcade.macro", [".eamacro"]);
     } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(errorMessage(error, "保存できませんでした", "Could not save the profile")); }
   }
 
   async function saveAsJson() {
     closeMenus();
     try {
-      const json = serializeProfileJson(profile);
-      await saveBlob(new Blob([json], { type: "application/vnd.easy-arcade.macro+json;charset=utf-8" }), profileFileName(profile.name, ".eamacro.json"), "EASY ARCADE Profile JSON", "application/vnd.easy-arcade.macro+json", [".eamacro.json", ".json"]);
+      const currentProfile = profileRef.current;
+      const json = serializeProfileJson(currentProfile);
+      await saveBlob(new Blob([json], { type: "application/vnd.easy-arcade.macro+json;charset=utf-8" }), profileFileName(currentProfile.name, ".eamacro.json"), "EASY ARCADE Profile JSON", "application/vnd.easy-arcade.macro+json", [".eamacro.json", ".json"]);
     } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(errorMessage(error, "保存できませんでした", "Could not save the profile")); }
   }
 
   function activateProfile(entry: StoredProfile) {
-    setActiveProfileId(entry.id); setProfile(clone(entry.profile));
+    const nextProfile = clone(entry.profile);
+    profileRef.current = nextProfile;
+    setActiveProfileId(entry.id); setProfile(nextProfile);
     setSelectedSequence(0); setSelectedSelector(0); setSelectedMacroSet(0);
     closeMenus();
   }
@@ -267,7 +277,9 @@ export function MacroEditor() {
 
   function resetProfile() {
     if (!window.confirm(t("現在のプロファイルを初期化しますか？", "Reset the current profile?"))) return;
-    setProfile(createDefaultProfile());
+    const defaultProfile = createDefaultProfile();
+    profileRef.current = defaultProfile;
+    setProfile(defaultProfile);
     setSelectedSequence(0); setSelectedSelector(0); setSelectedMacroSet(0); setTab("mapping");
     setNotice(t("プロファイルを初期化しました", "Profile reset"));
     closeMenus();
