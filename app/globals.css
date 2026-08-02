@@ -57,7 +57,16 @@ button { cursor: pointer; }
 .profile-settings-row { min-height: 30px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .profile-check { height: 28px; padding: 0 2px; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .profile-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
-.profile-settings-row .macro-tick { margin-left: 0; }
+.frame-step-setting { position: relative; }
+.frame-step-setting summary { height: 28px; padding: 0 4px; display: flex; align-items: center; gap: 4px; border-radius: 6px; color: var(--muted); cursor: pointer; list-style: none; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.frame-step-setting summary::-webkit-details-marker { display: none; }
+.frame-step-setting summary:hover, .frame-step-setting[open] summary { background: var(--subtle); color: var(--text); }
+.frame-step-setting summary > span { color: #a1a1aa; font-size: 13px; }
+.frame-step-popover { width: 190px; padding: 12px; position: absolute; top: 32px; right: 0; z-index: 25; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); box-shadow: 0 12px 30px rgba(24,24,27,.14); }
+.frame-step-popover label > span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 10px; font-weight: 600; }
+.frame-step-popover label > div { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+.frame-step-popover input { width: 64px; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; outline: 0; background: var(--panel); font-size: 12px; font-variant-numeric: tabular-nums; }
+.frame-step-popover input:focus { border-color: #93c5fd; outline: 2px solid #dbeafe; }
 .profile-picker { position: relative; }
 .profile-picker summary { height: 30px; padding: 0 10px; display: flex; align-items: center; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--muted); cursor: pointer; list-style: none; font-size: 11px; font-weight: 600; }
 .profile-picker summary::-webkit-details-marker { display: none; }
@@ -89,8 +98,6 @@ button { cursor: pointer; }
 .macro-set-bar { min-height: 48px; padding: 0 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); background: #fafafa; }
 .macro-set-bar > span { color: var(--muted); font-size: 11px; font-weight: 600; }
 .macro-set-bar select { width: min(260px, 45vw); height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); font-size: 12px; }
-.macro-tick { height: 32px; margin-left: auto; padding: 0 2px; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; }
-.macro-tick input { width: 38px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
 .section-heading > .macro-set-bar { min-height: 0; padding: 0; border: 0; background: transparent; }
 .macro-workspace > .split-workspace { min-height: calc(100vh - 284px); }
 

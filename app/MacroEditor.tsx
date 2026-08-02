@@ -84,6 +84,7 @@ export function MacroEditor() {
   const jsonFileRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDetailsElement>(null);
   const fileMenuRef = useRef<HTMLDetailsElement>(null);
+  const frameStepMenuRef = useRef<HTMLDetailsElement>(null);
   const toastTimerRef = useRef<number | null>(null);
   const tRef = useRef(t);
   tRef.current = t;
@@ -139,6 +140,7 @@ export function MacroEditor() {
       const target = event.target as Node;
       if (profileMenuRef.current && !profileMenuRef.current.contains(target)) profileMenuRef.current.open = false;
       if (fileMenuRef.current && !fileMenuRef.current.contains(target)) fileMenuRef.current.open = false;
+      if (frameStepMenuRef.current && !frameStepMenuRef.current.contains(target)) frameStepMenuRef.current.open = false;
     }
     function closeOnEscape(event: KeyboardEvent) { if (event.key === "Escape") closeMenus(); }
     document.addEventListener("pointerdown", closeOnOutsideClick); document.addEventListener("keydown", closeOnEscape);
@@ -162,6 +164,7 @@ export function MacroEditor() {
   function closeMenus() {
     if (profileMenuRef.current) profileMenuRef.current.open = false;
     if (fileMenuRef.current) fileMenuRef.current.open = false;
+    if (frameStepMenuRef.current) frameStepMenuRef.current.open = false;
   }
 
   function errorMessage(error: unknown, fallbackJa: string, fallbackEn: string) {
@@ -349,7 +352,12 @@ export function MacroEditor() {
           </div>
         </div>
         <div className="profile-settings-row">
-          <label className="macro-tick"><span>1 tick =</span><input aria-label={t("1 tickあたりのフレーム数", "Frames per tick")} type="number" min="1" max="255" value={profile.frameStep} onChange={(event) => update((draft) => { draft.frameStep = Math.max(1, Math.min(255, Number(event.target.value))); })} /><span>{t("フレーム", "frames")}</span></label>
+          <details className="frame-step-setting" ref={frameStepMenuRef}>
+            <summary aria-label={t("1 tickあたりのフレーム数を設定", "Set frames per tick")}>1 tick = {profile.frameStep} {t("フレーム", profile.frameStep === 1 ? "frame" : "frames")}<span aria-hidden="true">⌄</span></summary>
+            <div className="frame-step-popover">
+              <label><span>{t("1 tickあたり", "Frames per tick")}</span><div><input aria-label={t("1 tickあたりのフレーム数", "Frames per tick")} type="number" min="1" max="255" value={profile.frameStep} onChange={(event) => update((draft) => { draft.frameStep = Math.max(1, Math.min(255, Number(event.target.value))); })} /><span>{t("フレーム", profile.frameStep === 1 ? "frame" : "frames")}</span></div></label>
+            </div>
+          </details>
           <label className="profile-check"><input type="checkbox" checked={profile.twoPlayerOutputs} onChange={(event) => update((draft) => {
             draft.twoPlayerOutputs = event.target.checked;
             if (!event.target.checked) {
