@@ -34,10 +34,8 @@ const content = {
       { title: "共有", paragraphs: ["現在のプロファイルを共有ライブラリへ公開したり、ほかのユーザーが公開したプロファイルをダウンロードまたはエディタへ読み込んだりできます。閲覧とダウンロードにはログインが不要です。", "投稿・編集・削除にはChatGPTでのログインが必要です。公開される作者情報は投稿時に入力した作者名だけで、ChatGPTの名前やメールアドレスは表示されません。"] },
     ] as Section[],
     limitsTitle: "仕様と制限",
-    limitsLead: "実機用.eamacroファイルには、次の上限があります。Profile JSONはこのファイルサイズ制限を受けませんが、実機用ファイルへの書き出し時に検証されます。",
+    limitsLead: "実機用.eamacroファイルには、次の上限があります。",
     limits: [
-      { item: "論理ボタン", limit: "32 ID（通常の編集画面は16個：COIN、START、方向、A〜J）" },
-      { item: "ゲーム基板出力", limit: "24（1P 12 ＋ 2P 12）" },
       { item: "マクロ", limit: "64" },
       { item: "マクロ割り当て", limit: "256" },
       { item: "マクロセット", limit: "16" },
@@ -80,10 +78,8 @@ const content = {
       { title: "Sharing", paragraphs: ["Publish the current profile to the shared library, or download and open profiles published by other users. Browsing and downloading do not require sign-in.", "Publishing, editing, and deleting require Sign in with ChatGPT. The only public author information is the alias entered when publishing; your ChatGPT name and email address are not shown."] },
     ] as Section[],
     limitsTitle: "Specifications and Limits",
-    limitsLead: "Hardware-ready .eamacro files are subject to the following limits. Profile JSON is not limited to 8 KB, but these limits are checked when exporting a hardware file.",
+    limitsLead: "Hardware-ready .eamacro files are subject to the following limits.",
     limits: [
-      { item: "Logical buttons", limit: "32 IDs (16 shown in the standard editor: COIN, START, directions, and A–J)" },
-      { item: "Game board outputs", limit: "24 (12 for Player 1 + 12 for Player 2)" },
       { item: "Macros", limit: "64" },
       { item: "Macro assignments", limit: "256" },
       { item: "Macro sets", limit: "16" },
