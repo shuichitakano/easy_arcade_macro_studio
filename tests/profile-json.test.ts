@@ -17,6 +17,12 @@ function sampleProfile() {
   return profile;
 }
 
+function withoutMetadata<T extends { metadata?: unknown }>(value: T) {
+  const { metadata: _metadata, ...rest } = value;
+  void _metadata;
+  return rest;
+}
+
 function crc32(data: Uint8Array) {
   let crc = 0xffffffff;
   for (const byte of data) {
@@ -43,6 +49,43 @@ function withLegacyJsonMetadata(bytes: Uint8Array, metadata: object) {
   legacyView.setUint32(8, legacy.length, true);
   legacyView.setUint32(12, crc32(legacy.subarray(16)), true);
   return legacy;
+}
+
+function asPrototype16Bit(bytes: Uint8Array) {
+  const sourceView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const payload: number[] = [];
+  for (let cursor = 16; cursor < bytes.length;) {
+    const type = bytes[cursor], length = sourceView.getUint16(cursor + 2, true);
+    const source = bytes.subarray(cursor + 4, cursor + 4 + length);
+    const converted: number[] = [];
+    if (type === 0x01) {
+      for (let index = 0; index < 18; index++) converted.push(source[index * 3], source[index * 3 + 1]);
+    } else if (type === 0x03) {
+      converted.push(source[0]);
+      let position = 1;
+      for (let definition = 0; definition < source[0]; definition++) {
+        const count = source[position + 1];
+        converted.push(...source.subarray(position, position + 4)); position += 4;
+        for (let step = 0; step < count; step++, position += 5) converted.push(source[position], source[position + 1], source[position + 3], source[position + 4]);
+      }
+    } else if (type === 0x04) {
+      converted.push(source[0]);
+      let position = 1;
+      for (let selector = 0; selector < source[0]; selector++) {
+        const count = source[position + 8];
+        converted.push(...source.subarray(position, position + 10)); position += 10;
+        for (let state = 0; state < count; state++, position += 3) converted.push(source[position], source[position + 1]);
+      }
+    } else converted.push(...source);
+    payload.push(type, 0, converted.length & 0xff, converted.length >>> 8, ...converted);
+    cursor += 4 + length;
+  }
+  const prototype = new Uint8Array(16 + payload.length);
+  prototype.set(bytes.subarray(0, 16)); prototype.set(payload, 16);
+  const view = new DataView(prototype.buffer);
+  view.setUint32(8, prototype.length, true);
+  view.setUint32(12, crc32(prototype.subarray(16)), true);
+  return prototype;
 }
 
 test("Profile JSON round-trips every executable setting", () => {
@@ -99,6 +142,38 @@ test(".eamacro stores names as compact binary metadata", () => {
   assert.equal(restored.metadata, undefined);
 });
 
+test("2P outputs round-trip through Profile JSON and 24-bit .eamacro masks", () => {
+  const source = sampleProfile();
+  source.twoPlayerOutputs = true;
+  source.mappings[12] = (1 << 6) | (1 << 18);
+  source.sequences[0].steps[0].mask = (1 << 3) | (1 << 4) | (1 << 6) | (1 << 17) | (1 << 18);
+  source.selectors[0].outputs[1] = (1 << 6) | (1 << 18);
+
+  const json = serializeProfileJson(source);
+  assert.match(json, /"twoPlayerOutputs": true/);
+  assert.match(json, /"2P_A"/);
+  assert.deepEqual(parseProfileJsonText(json), source);
+
+  const bytes = compileProfile(source);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let directLength = 0, settingsFlags = 0;
+  for (let cursor = 16; cursor < bytes.length;) {
+    const type = bytes[cursor], length = view.getUint16(cursor + 2, true);
+    if (type === 0x01) directLength = length;
+    if (type === 0x07) settingsFlags = bytes[cursor + 5];
+    cursor += 4 + length;
+  }
+  assert.equal(directLength, 54);
+  assert.equal(settingsFlags, 1);
+  assert.deepEqual(parseProfile(bytes), withoutMetadata(source));
+});
+
+test("prototype 16-bit output masks remain importable", () => {
+  const source = sampleProfile();
+  const restored = parseProfile(asPrototype16Bit(compileProfile(source)));
+  assert.deepEqual(restored, withoutMetadata(source));
+});
+
 test("legacy prototype JSON metadata remains importable", () => {
   const source = sampleProfile();
   const legacy = withLegacyJsonMetadata(compileProfile(source), {
@@ -122,4 +197,6 @@ test("published JSON Schema is valid JSON", async () => {
   const schema = JSON.parse(await readFile(new URL("../public/easy-arcade-profile.schema.json", import.meta.url), "utf8"));
   assert.equal(schema.$id, "https://studio.easy-arcade.net/easy-arcade-profile.schema.json");
   assert.equal(schema.properties.format.const, "easy-arcade-profile");
+  assert.equal(schema.properties.twoPlayerOutputs.default, false);
+  assert.ok(schema.$defs.output.enum.includes("2P_A"));
 });

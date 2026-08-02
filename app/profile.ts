@@ -3,8 +3,13 @@ export const LOGICAL_BUTTONS = [
   "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
 ] as const;
 
-export const OUTPUTS = [
+export const PLAYER_OUTPUTS = [
   "COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F",
+] as const;
+
+export const OUTPUTS = [
+  ...PLAYER_OUTPUTS,
+  "2P_COIN", "2P_START", "2P_UP", "2P_DOWN", "2P_LEFT", "2P_RIGHT", "2P_A", "2P_B", "2P_C", "2P_D", "2P_E", "2P_F",
 ] as const;
 
 export const MAX_PROFILE_BYTES = 8192;
@@ -33,6 +38,7 @@ export type Profile = {
   name: string;
   description: string;
   frameStep: number;
+  twoPlayerOutputs: boolean;
   mappings: number[];
   rapidFire: RapidFireOverride[];
   sequenceBindings: SequenceBinding[];
@@ -46,6 +52,7 @@ export function localizeProfileMessage(message: string, locale: "ja" | "en") {
   if (locale === "ja") return message;
   const exact: Record<string, string> = {
     "基本フレームステップが不正です": "The base frame step is invalid",
+    "2P出力設定が不正です": "The 2P output setting is invalid",
     "シーケンスは64件までです": "A profile can contain up to 64 sequences",
     "マクロセットは1〜16件必要です": "A profile must contain 1–16 macro sets",
     "ステートセレクタは8件までです": "A profile can contain up to 8 state selectors",
@@ -111,7 +118,8 @@ export function createDefaultProfile(): Profile {
     name: "My Arcade Profile",
     description: "",
     frameStep: 1,
-    mappings: LOGICAL_BUTTONS.map((_, i) => (i < OUTPUTS.length ? 1 << i : 0)),
+    twoPlayerOutputs: false,
+    mappings: LOGICAL_BUTTONS.map((_, i) => (i < PLAYER_OUTPUTS.length ? 1 << i : 0)),
     rapidFire: inheritedRapidFire(),
     sequenceBindings: [],
     sequences: [],
@@ -130,8 +138,10 @@ function crc32(data: Uint8Array): number {
 }
 
 function u16(target: number[], value: number) { target.push(value & 0xff, (value >>> 8) & 0xff); }
+function u24(target: number[], value: number) { target.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff); }
 function section(type: number, payload: number[]): number[] { return [type, 0, payload.length & 0xff, (payload.length >>> 8) & 0xff, ...payload]; }
 function read16(view: DataView, offset: number) { return view.getUint16(offset, true); }
+function read24(data: Uint8Array, offset: number) { return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16); }
 function transformFromFlags(flags: number): OutputTransform {
   return (flags & 12) === 12 ? "flipBoth" : flags & 4 ? "flipHorizontal" : flags & 8 ? "flipVertical" : "none";
 }
@@ -221,6 +231,8 @@ export function bindingsFor(profile: Profile, sequenceId: number) {
 
 export function validateProfile(profile: Profile): string[] {
   const errors: string[] = [];
+  const outputMask = profile.twoPlayerOutputs ? 0xffffff : 0x0fff;
+  if (typeof profile.twoPlayerOutputs !== "boolean") errors.push("2P出力設定が不正です");
   if (profile.mappings.length !== LOGICAL_BUTTONS.length) errors.push(`直接マッピングは${LOGICAL_BUTTONS.length}件必要です`);
   if (profile.rapidFire.length !== LOGICAL_BUTTONS.length) errors.push(`連射設定は${LOGICAL_BUTTONS.length}件必要です`);
   if (profile.sequenceBindings.length > MAX_SEQUENCE_BINDINGS) errors.push(`マクロ割り当ては${MAX_SEQUENCE_BINDINGS}件までです`);
@@ -229,7 +241,7 @@ export function validateProfile(profile: Profile): string[] {
   if (!profile.macroSets || profile.macroSets.names.length < 1 || profile.macroSets.names.length > 16) errors.push("マクロセットは1〜16件必要です");
   const macroSetCount = profile.macroSets?.names.length ?? 0;
   if (profile.selectors.length > 8) errors.push("ステートセレクタは8件までです");
-  profile.mappings.forEach((mask, i) => { if (mask & ~0x0fff) errors.push(`${LOGICAL_BUTTONS[i]}の出力マスクが不正です`); });
+  profile.mappings.forEach((mask, i) => { if (!Number.isInteger(mask) || mask < 0 || (mask & ~outputMask)) errors.push(`${LOGICAL_BUTTONS[i]}の出力マスクが不正です`); });
   profile.rapidFire.forEach((rapid, i) => {
     if (!(["disabled", "sync", "front", "back"] as RapidTriggerType[]).includes(rapid.triggerType)) errors.push(`${LOGICAL_BUTTONS[i]}の連射トリガタイプが不正です`);
     if (rapid.divisor < 2 || rapid.divisor > 60) errors.push(`${LOGICAL_BUTTONS[i]}の連射速度が不正です`);
@@ -243,7 +255,7 @@ export function validateProfile(profile: Profile): string[] {
     totalSteps += seq.steps.length;
     if (!seq.steps.length || seq.steps.length > 255) errors.push(`${seq.name}: ステップ数が範囲外です`);
     if (seq.loopStart < 0 || seq.loopStart >= seq.steps.length) errors.push(`${seq.name}: ループ開始位置が不正です`);
-    if (seq.steps.some((step) => step.frames < 1 || step.frames > 65535 || !!(step.mask & ~0x0fff))) errors.push(`${seq.name}: ステップが不正です`);
+    if (seq.steps.some((step) => step.frames < 1 || step.frames > 65535 || !Number.isInteger(step.mask) || step.mask < 0 || !!(step.mask & ~outputMask))) errors.push(`${seq.name}: ステップが不正です`);
   }
   if (totalSteps > 1024) errors.push("全シーケンスの合計は1024ステップまでです");
   const bindingKeys = new Set<string>();
@@ -265,7 +277,7 @@ export function validateProfile(profile: Profile): string[] {
     if (selector.max < selector.min || selector.outputs.length !== selector.max - selector.min + 1 || selector.initial < selector.min || selector.initial > selector.max) errors.push(`${selector.name}: 状態範囲と出力数が一致しません`);
     if (!Array.isArray(selector.stateNames) || selector.stateNames.length !== selector.outputs.length || selector.stateNames.some((name) => typeof name !== "string")) errors.push(`${selector.name}: ステート名と状態数が一致しません`);
     if (selector.outputs.length > 64) errors.push(`${selector.name}: 状態は64件までです`);
-    if (selector.outputs.some((mask) => mask & ~0x0fff)) errors.push(`${selector.name}: 状態出力マスクが不正です`);
+    if (selector.outputs.some((mask) => !Number.isInteger(mask) || mask < 0 || (mask & ~outputMask))) errors.push(`${selector.name}: 状態出力マスクが不正です`);
   }
   return errors;
 }
@@ -275,7 +287,7 @@ export function compileProfile(profile: Profile): Uint8Array {
   if (errors.length) throw new Error(errors[0]);
 
   const direct: number[] = [];
-  profile.mappings.forEach((mask) => u16(direct, mask));
+  profile.mappings.forEach((mask) => u24(direct, mask));
 
   const bindings: number[] = [];
   const sortedBindings = [...profile.sequenceBindings].sort((a, b) => a.logicalId - b.logicalId || a.sequenceId - b.sequenceId || a.setId - b.setId);
@@ -285,14 +297,14 @@ export function compileProfile(profile: Profile): Uint8Array {
   const definitions: number[] = [profile.sequences.length];
   [...profile.sequences].sort((a, b) => a.id - b.id).forEach((seq) => {
     definitions.push(seq.id, seq.steps.length, seq.loopStart, 0);
-    seq.steps.forEach((step) => { u16(definitions, step.mask); u16(definitions, step.frames); });
+    seq.steps.forEach((step) => { u24(definitions, step.mask); u16(definitions, step.frames); });
   });
 
   const selectors: number[] = [profile.selectors.length];
   [...profile.selectors].sort((a, b) => a.id - b.id).forEach((item) => {
     selectors.push(item.id, item.increment, item.decrement, item.min, item.max, item.initial, item.wrap ? 1 : 0, item.neutralFrames);
     selectors.push(item.outputs.length, 0);
-    item.outputs.forEach((mask) => u16(selectors, mask));
+    item.outputs.forEach((mask) => u24(selectors, mask));
   });
 
   const rapid: number[] = [];
@@ -300,7 +312,7 @@ export function compileProfile(profile: Profile): Uint8Array {
   profile.rapidFire.forEach((item) => rapid.push(item.override ? 1 : 0, triggerCodes[item.triggerType], item.divisor));
 
   const macroSets = [profile.macroSets.names.length, 0];
-  const profileSettings = [profile.frameStep, 0];
+  const profileSettings = [profile.frameStep, profile.twoPlayerOutputs ? 1 : 0];
 
   const metadata = compileMetadata(profile);
   const payload = [
@@ -338,10 +350,11 @@ export function parseProfile(bytes: Uint8Array): Profile {
   }
 
   const direct = sections.get(1), bindingData = sections.get(2), defs = sections.get(3), selectorData = sections.get(4), rapidData = sections.get(5), macroSetData = sections.get(6), profileSettings = sections.get(7);
-  if (!direct || ![34, LOGICAL_BUTTONS.length * 2].includes(direct.length) || !bindingData) throw new Error("必須セクションがありません");
+  if (!direct || ![34, LOGICAL_BUTTONS.length * 2, LOGICAL_BUTTONS.length * 3].includes(direct.length) || !bindingData) throw new Error("必須セクションがありません");
+  const outputWidth = direct.length === LOGICAL_BUTTONS.length * 3 ? 3 : 2;
   const directView = new DataView(direct.buffer, direct.byteOffset, direct.byteLength);
-  const storedLogicalCount = direct.length / 2;
-  const mappings = Array.from({ length: LOGICAL_BUTTONS.length }, (_, i) => i < storedLogicalCount ? directView.getUint16(i * 2, true) : 0);
+  const storedLogicalCount = direct.length / outputWidth;
+  const mappings = Array.from({ length: LOGICAL_BUTTONS.length }, (_, i) => i < storedLogicalCount ? outputWidth === 3 ? read24(direct, i * 3) : directView.getUint16(i * 2, true) : 0);
 
   const sequenceBindings: SequenceBinding[] = [];
   const countedBindingCount = bindingData.length >= 2 ? new DataView(bindingData.buffer, bindingData.byteOffset, bindingData.byteLength).getUint16(0, true) : -1;
@@ -367,10 +380,12 @@ export function parseProfile(bytes: Uint8Array): Profile {
 
   let macroSets: MacroSetConfig = { names: ["Set 0"] };
   let frameStep = 1;
+  let twoPlayerOutputs = false;
   let hasGlobalFrameStep = false;
   if (profileSettings) {
-    if (profileSettings.length !== 2 || profileSettings[0] < 1 || profileSettings[1] !== 0) throw new Error("Profile Settingsセクションが不正です");
-    frameStep = profileSettings[0]; hasGlobalFrameStep = true;
+    const flags = profileSettings[1];
+    if (profileSettings.length !== 2 || profileSettings[0] < 1 || (flags & ~1) || (outputWidth === 2 && flags !== 0)) throw new Error("Profile Settingsセクションが不正です");
+    frameStep = profileSettings[0]; twoPlayerOutputs = !!(flags & 1); hasGlobalFrameStep = true;
   }
   if (macroSetData) {
     const legacySixByte = macroSetData.length === 6 && macroSetData[5] === 0;
@@ -388,9 +403,10 @@ export function parseProfile(bytes: Uint8Array): Profile {
       const id = defs[p], count = defs[p + 1], loopStart = defs[p + 2], definitionReserved = defs[p + 3]; p += 4;
       if (!hasGlobalFrameStep && !legacyFrameStep && definitionReserved) legacyFrameStep = definitionReserved;
       const steps: SequenceStep[] = [];
-      for (let i = 0; i < count; i++, p += 4) {
-        if (p + 4 > defs.length) throw new Error("ステップが途中で終了しています");
-        steps.push({ mask: dv.getUint16(p, true), frames: dv.getUint16(p + 2, true) });
+      const stepSize = outputWidth + 2;
+      for (let i = 0; i < count; i++, p += stepSize) {
+        if (p + stepSize > defs.length) throw new Error("ステップが途中で終了しています");
+        steps.push({ mask: outputWidth === 3 ? read24(defs, p) : dv.getUint16(p, true), frames: dv.getUint16(p + outputWidth, true) });
       }
       sequences.push({ id, name: `Macro ${id + 1}`, loopStart, steps });
     }
@@ -410,9 +426,9 @@ export function parseProfile(bytes: Uint8Array): Profile {
         const wrap = !!(selectorData[p + 6] & 1), neutralFrames = selectorData[p + 7], count = selectorData[p + headerSize - 2];
         p += headerSize;
         const outputs: number[] = [];
-        for (let i = 0; i < count; i++, p += 2) {
-          if (p + 2 > selectorData.length) throw new Error("状態出力が途中で終了しています");
-          outputs.push(dv.getUint16(p, true));
+        for (let i = 0; i < count; i++, p += outputWidth) {
+          if (p + outputWidth > selectorData.length) throw new Error("状態出力が途中で終了しています");
+          outputs.push(outputWidth === 3 ? read24(selectorData, p) : dv.getUint16(p, true));
         }
         parsed.push({ id, name: `Selector ${id + 1}`, increment, decrement, min, max, initial, wrap, neutralFrames, outputs, stateNames: outputs.map((_, index) => String(min + index)) });
       }
@@ -461,7 +477,7 @@ export function parseProfile(bytes: Uint8Array): Profile {
       } catch { /* optional legacy metadata */ }
     }
   }
-  const profile: Profile = { schemaVersion: 1, name, description, frameStep, mappings, rapidFire, sequenceBindings, sequences, macroSets, selectors, ...(metadata ? { metadata } : {}) };
+  const profile: Profile = { schemaVersion: 1, name, description, frameStep, twoPlayerOutputs, mappings, rapidFire, sequenceBindings, sequences, macroSets, selectors, ...(metadata ? { metadata } : {}) };
   const errors = validateProfile(profile);
   if (errors.length) throw new Error(errors[0]);
   return profile;
@@ -516,6 +532,7 @@ export function normalizeProfile(candidate: Partial<Profile> & { sequenceBinding
   }));
   return {
     ...base, ...candidate, schemaVersion: 1, sequences,
+    twoPlayerOutputs: candidate.twoPlayerOutputs === true,
     frameStep: Number.isInteger(candidate.frameStep) ? Math.max(1, Math.min(255, candidate.frameStep!))
       : Number.isInteger(legacyFrameStep) ? Math.max(1, Math.min(255, legacyFrameStep!)) : 1,
     mappings: LOGICAL_BUTTONS.map((_, index) => candidate.mappings?.[index] ?? base.mappings[index]),

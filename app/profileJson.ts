@@ -13,6 +13,7 @@ export type EasyArcadeProfileJson = {
   name: string;
   description: string;
   frameStep: number;
+  twoPlayerOutputs: boolean;
   mappings: Record<LogicalButton, Output[]>;
   rapidFire: Record<LogicalButton, RapidFireOverride>;
   macroSets: { id: number; name: string }[];
@@ -119,8 +120,8 @@ export function parseProfileJsonText(text: string): Profile {
 }
 
 export function parseProfileJson(value: unknown): Profile {
-  const fields = ["format", "schemaVersion", "name", "description", "frameStep", "mappings", "rapidFire", "macroSets", "sequences", "bindings", "selectors", "metadata"] as const;
-  const root = exactObject(value, "$", fields, fields.filter((field) => field !== "metadata"));
+  const fields = ["format", "schemaVersion", "name", "description", "frameStep", "twoPlayerOutputs", "mappings", "rapidFire", "macroSets", "sequences", "bindings", "selectors", "metadata"] as const;
+  const root = exactObject(value, "$", fields, fields.filter((field) => field !== "metadata" && field !== "twoPlayerOutputs"));
   if (root.format !== "easy-arcade-profile") fail("$.format", "easy-arcade-profileである必要があります", "must be easy-arcade-profile");
   if (root.schemaVersion !== 1) fail("$.schemaVersion", "未対応のProfile JSONバージョンです", "is an unsupported Profile JSON version");
 
@@ -215,6 +216,7 @@ export function parseProfileJson(value: unknown): Profile {
     name: stringAt(root.name, "$.name"),
     description: stringAt(root.description, "$.description"),
     frameStep: integerAt(root.frameStep, "$.frameStep", 1, 255),
+    twoPlayerOutputs: Object.hasOwn(root, "twoPlayerOutputs") ? booleanAt(root.twoPlayerOutputs, "$.twoPlayerOutputs") : false,
     mappings, rapidFire, sequenceBindings, sequences, macroSets: { names: macroSetNames }, selectors,
     ...(Object.hasOwn(root, "metadata") ? { metadata: metadataAt(root.metadata, "$.metadata") } : {}),
   };
@@ -234,6 +236,7 @@ export function toProfileJson(profile: Profile): EasyArcadeProfileJson {
     name: profile.name,
     description: profile.description,
     frameStep: profile.frameStep,
+    twoPlayerOutputs: profile.twoPlayerOutputs,
     mappings,
     rapidFire,
     macroSets: profile.macroSets.names.map((name, id) => ({ id, name })),

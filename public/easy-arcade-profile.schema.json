@@ -11,6 +11,7 @@
     "name": { "type": "string" },
     "description": { "type": "string" },
     "frameStep": { "type": "integer", "minimum": 1, "maximum": 255 },
+    "twoPlayerOutputs": { "type": "boolean", "default": false },
     "mappings": { "$ref": "#/$defs/mappings" },
     "rapidFire": { "$ref": "#/$defs/rapidFire" },
     "macroSets": {
@@ -122,11 +123,11 @@
       "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
     },
     "output": {
-      "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F"]
+      "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "2P_COIN", "2P_START", "2P_UP", "2P_DOWN", "2P_LEFT", "2P_RIGHT", "2P_A", "2P_B", "2P_C", "2P_D", "2P_E", "2P_F"]
     },
     "outputList": {
       "type": "array",
-      "maxItems": 12,
+      "maxItems": 24,
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/output" }
     },

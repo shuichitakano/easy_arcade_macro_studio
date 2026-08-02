@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   bindingsFor, compileProfile, createDefaultProfile, LOGICAL_BUTTONS, MacroSequence,
-  localizeProfileMessage, MAX_SEQUENCE_BINDINGS, normalizeProfile, OUTPUTS, OutputTransform, parseProfile, Profile, SequenceBinding, StateSelector, validateProfile,
+  localizeProfileMessage, MAX_SEQUENCE_BINDINGS, normalizeProfile, OUTPUTS, OutputTransform, parseProfile, PLAYER_OUTPUTS, Profile, SequenceBinding, StateSelector, validateProfile,
 } from "./profile";
 import { parseProfileJsonText, ProfileJsonError, serializeProfileJson } from "./profileJson";
 import { listStoredProfiles, removeStoredProfile, saveStoredProfile, StoredProfile } from "./profileStore";
@@ -16,7 +16,33 @@ import { LanguageSwitch, useI18n } from "./i18n";
 type Tab = "mapping" | "macro" | "macrosets" | "selector" | "overview" | "share";
 
 function clone<T>(value: T): T { return structuredClone(value); }
-function maskLabels(mask: number) { return OUTPUTS.filter((_, i) => mask & (1 << i)); }
+const DIRECTION_LABELS: Record<string, string> = { UP: "⇧", DOWN: "⇩", LEFT: "⇦", RIGHT: "⇨" };
+function buttonLabel(button: string) { return DIRECTION_LABELS[button] ?? button; }
+function outputLabel(index: number, showPlayer = false) {
+  const player = index >= PLAYER_OUTPUTS.length ? 2 : 1;
+  const base = PLAYER_OUTPUTS[index % PLAYER_OUTPUTS.length];
+  return `${showPlayer ? `${player}P ` : ""}${buttonLabel(base)}`;
+}
+function maskLabels(mask: number, twoPlayerOutputs: boolean) {
+  return OUTPUTS.slice(0, twoPlayerOutputs ? 24 : 12).map((_, index) => ({ key: OUTPUTS[index], label: outputLabel(index, twoPlayerOutputs) })).filter((_, index) => mask & (1 << index));
+}
+function playerCommand(mask: number, player: 0 | 1) {
+  const value = (mask >>> (player * 12)) & 0x0fff;
+  const up = !!(value & (1 << 2)), down = !!(value & (1 << 3)), left = !!(value & (1 << 4)), right = !!(value & (1 << 5));
+  let direction = "";
+  if (up && left && !down && !right) direction = "↖";
+  else if (up && right && !down && !left) direction = "↗";
+  else if (down && left && !up && !right) direction = "↙";
+  else if (down && right && !up && !left) direction = "↘";
+  else direction = [up ? "↑" : "", down ? "↓" : "", left ? "←" : "", right ? "→" : ""].filter(Boolean).join("+");
+  const buttons = [0, 1, 6, 7, 8, 9, 10, 11].filter((index) => value & (1 << index)).map((index) => PLAYER_OUTPUTS[index]);
+  return [direction, ...buttons].filter(Boolean).join("+") || "—";
+}
+function commandLabel(mask: number, twoPlayerOutputs: boolean) {
+  const first = playerCommand(mask, 0), second = playerCommand(mask, 1);
+  if (!twoPlayerOutputs || second === "—") return first;
+  return first === "—" ? `2P ${second}` : `1P ${first} / 2P ${second}`;
+}
 function transformAxes(transform: OutputTransform) { return { horizontal: transform === "flipHorizontal" || transform === "flipBoth", vertical: transform === "flipVertical" || transform === "flipBoth" }; }
 function transformFromAxes(horizontal: boolean, vertical: boolean): OutputTransform { return horizontal && vertical ? "flipBoth" : horizontal ? "flipHorizontal" : vertical ? "flipVertical" : "none"; }
 function newProfileId() { return crypto.randomUUID(); }
@@ -25,17 +51,19 @@ function profileFileName(name: string, extension = ".eamacro") { return `${name.
 type SaveFileHandle = { createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> };
 type FilePickerWindow = Window & { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<SaveFileHandle> };
 
-function OutputToggles({ mask, onChange, allowed = 0x0fff }: { mask: number; onChange: (mask: number) => void; allowed?: number }) {
+function OutputToggles({ mask, onChange, twoPlayerOutputs, allowed = 0xffffff }: { mask: number; onChange: (mask: number) => void; twoPlayerOutputs: boolean; allowed?: number }) {
+  const players = twoPlayerOutputs ? [0, 1] : [0];
   return (
     <div className="output-toggles">
-      {OUTPUTS.map((label, index) => {
-        const bit = 1 << index;
-        const disabled = !(allowed & bit);
-        return (
-          <button key={label} type="button" disabled={disabled} className={mask & bit ? "output-chip active" : "output-chip"}
-            onClick={() => onChange(mask ^ bit)}>{label}</button>
-        );
-      })}
+      {players.map((player) => <div className="output-player" key={player}>
+        {twoPlayerOutputs && <span className="output-player-label">{player + 1}P</span>}
+        <div className="output-player-buttons">{PLAYER_OUTPUTS.map((label, outputIndex) => {
+          const index = player * PLAYER_OUTPUTS.length + outputIndex;
+          const bit = 1 << index;
+          const disabled = !(allowed & bit);
+          return <button key={label} type="button" title={label} disabled={disabled} className={mask & bit ? "output-chip active" : "output-chip"} onClick={() => onChange(mask ^ bit)}>{buttonLabel(label)}</button>;
+        })}</div>
+      </div>)}
     </div>
   );
 }
@@ -305,18 +333,31 @@ export function MacroEditor() {
       </header>
 
       <section className="profile-strip">
-        <details className="profile-picker" ref={profileMenuRef}>
-          <summary aria-label={t("プロファイルを選択", "Select profile")}>Profile</summary>
-          <div className="profile-popover">
-            <div className="profile-list" role="listbox" aria-label={t("保存済みプロファイル", "Saved profiles")}>{storedProfiles.map((entry) => <button role="option" aria-selected={entry.id === activeProfileId} className={entry.id === activeProfileId ? "active" : ""} onClick={() => activateProfile(entry)} key={entry.id}><span>{entry.profile.name}</span>{entry.id === activeProfileId && <b>✓</b>}</button>)}</div>
+        <div className="profile-primary-row">
+          <details className="profile-picker" ref={profileMenuRef}>
+            <summary aria-label={t("プロファイルを選択", "Select profile")}>Profile</summary>
+            <div className="profile-popover">
+              <div className="profile-list" role="listbox" aria-label={t("保存済みプロファイル", "Saved profiles")}>{storedProfiles.map((entry) => <button role="option" aria-selected={entry.id === activeProfileId} className={entry.id === activeProfileId ? "active" : ""} onClick={() => activateProfile(entry)} key={entry.id}><span>{entry.profile.name}</span>{entry.id === activeProfileId && <b>✓</b>}</button>)}</div>
+            </div>
+          </details>
+          <input className="profile-name" aria-label={t("プロファイル名", "Profile name")} value={profile.name} onChange={(e) => update((d) => { d.name = e.target.value; })} />
+          <div className="profile-row-actions">
+            <button onClick={createProfile}>{t("新規", "New")}</button>
+            <button onClick={duplicateProfile}>{t("複製", "Duplicate")}</button>
+            <button onClick={resetProfile}>{t("初期化", "Reset")}</button>
+            <button className="danger" onClick={deleteProfile}>{t("削除", "Delete")}</button>
           </div>
-        </details>
-        <input className="profile-name" aria-label={t("プロファイル名", "Profile name")} value={profile.name} onChange={(e) => update((d) => { d.name = e.target.value; })} />
-        <div className="profile-row-actions">
-          <button onClick={createProfile}>{t("新規", "New")}</button>
-          <button onClick={duplicateProfile}>{t("複製", "Duplicate")}</button>
-          <button onClick={resetProfile}>{t("初期化", "Reset")}</button>
-          <button className="danger" onClick={deleteProfile}>{t("削除", "Delete")}</button>
+        </div>
+        <div className="profile-settings-row">
+          <label className="profile-check"><input type="checkbox" checked={profile.twoPlayerOutputs} onChange={(event) => update((draft) => {
+            draft.twoPlayerOutputs = event.target.checked;
+            if (!event.target.checked) {
+              draft.mappings = draft.mappings.map((mask) => mask & 0x0fff);
+              draft.sequences.forEach((sequence) => sequence.steps.forEach((step) => { step.mask &= 0x0fff; }));
+              draft.selectors.forEach((item) => { item.outputs = item.outputs.map((mask) => mask & 0x0fff); });
+            }
+          })} /><span>2P</span></label>
+          <label className="macro-tick"><span>1 tick =</span><input aria-label={t("1 tickあたりのフレーム数", "Frames per tick")} type="number" min="1" max="255" value={profile.frameStep} onChange={(event) => update((draft) => { draft.frameStep = Math.max(1, Math.min(255, Number(event.target.value))); })} /><span>{t("フレーム", "frames")}</span></label>
         </div>
       </section>
 
@@ -336,8 +377,8 @@ export function MacroEditor() {
           <div className="mapping-grid">
             {LOGICAL_BUTTONS.map((button, index) => (
               <article className="mapping-row button-row" key={button}>
-                <div className="logical-label"><strong>{button}</strong></div>
-                <div className="direct-route"><OutputToggles mask={profile.mappings[index]} onChange={(mask) => update((d) => { d.mappings[index] = mask; })} /></div>
+                <div className="logical-label"><strong>{buttonLabel(button)}</strong></div>
+                <div className="direct-route"><OutputToggles twoPlayerOutputs={profile.twoPlayerOutputs} mask={profile.mappings[index]} onChange={(mask) => update((d) => { d.mappings[index] = mask; })} /></div>
                 <div className="rapid-route">
                   <label className="override-check" title={t("本体の連射設定を上書き", "Override hardware rapid fire")}><input aria-label={t(`${button}の連射設定を上書き`, `Override rapid fire for ${button}`)} type="checkbox" checked={profile.rapidFire[index].override} onChange={(e) => update((d) => { d.rapidFire[index].override = e.target.checked; })} /></label>
                   {profile.rapidFire[index].override && <div className="rapid-options"><select aria-label={t(`${button}の連射方式`, `Rapid-fire mode for ${button}`)} value={profile.rapidFire[index].triggerType} onChange={(e) => update((d) => { d.rapidFire[index].triggerType = e.target.value as "disabled" | "sync" | "front" | "back"; })}><option value="disabled">{t("連射無効", "Disabled")}</option><option value="sync">{t("同期", "Sync")}</option><option value="front">{t("表", "Front")}</option><option value="back">{t("裏", "Back")}</option></select><label className="rapid-divisor"><span>1/</span><input aria-label={t(`${button}の連射分周比`, `Rapid-fire divisor for ${button}`)} type="number" min="2" max="60" disabled={profile.rapidFire[index].triggerType === "disabled"} value={profile.rapidFire[index].divisor} onChange={(e) => update((d) => { d.rapidFire[index].divisor = Math.max(2, Math.min(60, Number(e.target.value))); })} /></label></div>}
@@ -350,7 +391,7 @@ export function MacroEditor() {
 
       {tab === "macro" && (
         <section className="workspace macro-workspace">
-          <MacroSetBar names={profile.macroSets.names} selected={selectedMacroSet} onChange={setSelectedMacroSet} frameStep={profile.frameStep} onFrameStepChange={(value) => update((draft) => { draft.frameStep = value; })} />
+          <MacroSetBar names={profile.macroSets.names} selected={selectedMacroSet} onChange={setSelectedMacroSet} />
           <div className="split-workspace">
             <aside className="rail">
               <div className="rail-title"><h2>{t("マクロ", "Macros")}</h2><button onClick={addSequence} aria-label={t("マクロを追加", "Add macro")}>＋</button></div>
@@ -363,7 +404,7 @@ export function MacroEditor() {
                 })}
               </div>
             </aside>
-            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet)} updateSequence={(mutator) => update((d) => mutator(d.sequences[selectedSequence]))}
+            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet)} updateSequence={(mutator) => update((d) => mutator(d.sequences[selectedSequence]))}
               toggleTrigger={(logicalId) => update((d) => {
                 const found = d.sequenceBindings.findIndex((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet);
                 if (found >= 0) d.sequenceBindings.splice(found, 1);
@@ -391,7 +432,7 @@ export function MacroEditor() {
               ))}
             </div>
           </aside>
-          {selector ? <SelectorEditor selector={selector} update={(mutator) => update((d) => mutator(d.selectors[selectedSelector]))}
+          {selector ? <SelectorEditor selector={selector} twoPlayerOutputs={profile.twoPlayerOutputs} update={(mutator) => update((d) => mutator(d.selectors[selectedSelector]))}
             remove={() => { update((d) => d.selectors.splice(selectedSelector, 1)); setSelectedSelector(0); }} /> : <EmptyState label={t("セレクタがありません", "No selectors yet")} action={t("＋ 最初のセレクタを作る", "+ Create the first selector")} onClick={addSelector} />}
         </section>
       )}
@@ -407,9 +448,9 @@ export function MacroEditor() {
   );
 }
 
-function MacroSetBar({ names, selected, onChange, label, frameStep, onFrameStepChange }: { names: string[]; selected: number; onChange: (value: number) => void; label?: string; frameStep?: number; onFrameStepChange?: (value: number) => void }) {
+function MacroSetBar({ names, selected, onChange, label }: { names: string[]; selected: number; onChange: (value: number) => void; label?: string }) {
   const { t } = useI18n();
-  return <div className="macro-set-bar"><span>{label ?? t("セット", "Set")}</span><select aria-label={t("編集するマクロセット", "Macro set to edit")} value={selected} onChange={(event) => onChange(Number(event.target.value))}>{names.map((name, index) => <option value={index} key={index}>{index} · {name}</option>)}</select>{frameStep !== undefined && onFrameStepChange && <label className="macro-tick"><span>1 tick =</span><input aria-label={t("1 tickあたりのフレーム数", "Frames per tick")} type="number" min="1" max="255" value={frameStep} onChange={(event) => onFrameStepChange(Math.max(1, Math.min(255, Number(event.target.value))))} /><span>{t("フレーム", "frames")}</span></label>}</div>;
+  return <div className="macro-set-bar"><span>{label ?? t("セット", "Set")}</span><select aria-label={t("編集するマクロセット", "Macro set to edit")} value={selected} onChange={(event) => onChange(Number(event.target.value))}>{names.map((name, index) => <option value={index} key={index}>{index} · {name}</option>)}</select></div>;
 }
 
 function MacroSetEditor({ profile, update, add, remove }: { profile: Profile; update: (fn: (draft: Profile) => void) => void; add: () => void; remove: (index: number) => void }) {
@@ -426,9 +467,10 @@ function MacroSetEditor({ profile, update, add, remove }: { profile: Profile; up
   );
 }
 
-function SequenceEditor({ sequence, frameStep, bindings, updateSequence, toggleTrigger, setBindingMode, setBindingTransform, duplicate, remove }: {
+function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updateSequence, toggleTrigger, setBindingMode, setBindingTransform, duplicate, remove }: {
   sequence: MacroSequence;
   frameStep: number;
+  twoPlayerOutputs: boolean;
   bindings: SequenceBinding[];
   updateSequence: (fn: (s: MacroSequence) => void) => void;
   toggleTrigger: (logicalId: number) => void;
@@ -458,7 +500,7 @@ function SequenceEditor({ sequence, frameStep, bindings, updateSequence, toggleT
           const binding = bindings.find((item) => item.logicalId === logicalId);
           const axes = transformAxes(binding?.transform ?? "none");
           return <div className={binding ? "trigger-card active" : "trigger-card"} key={button}>
-            <button className="trigger-main" aria-pressed={!!binding} onClick={() => toggleTrigger(logicalId)}>{button}</button>
+            <button className="trigger-main" aria-pressed={!!binding} onClick={() => toggleTrigger(logicalId)}>{buttonLabel(button)}</button>
             <div className="flip-flags"><button disabled={!binding} className={axes.horizontal ? "active" : ""} aria-label={t(`${button}の左右反転`, `Mirror ${button} horizontally`)} aria-pressed={axes.horizontal} onClick={() => binding && toggleTransformAxis(binding, "horizontal")}>↔</button><button disabled={!binding} className={axes.vertical ? "active" : ""} aria-label={t(`${button}の上下反転`, `Mirror ${button} vertically`)} aria-pressed={axes.vertical} onClick={() => binding && toggleTransformAxis(binding, "vertical")}>↕</button></div>
           </div>;
         })}</div>
@@ -468,6 +510,7 @@ function SequenceEditor({ sequence, frameStep, bindings, updateSequence, toggleT
         <label className="control"><span>{t("離したとき", "On release")}</span><select disabled={!bindings.length} value={releaseValue} onChange={(e) => setBindingMode("cancelOnRelease", e.target.value === "cancel")}><option value="complete">{t("現在の再生を完了", "Finish playback")}</option><option value="cancel">{t("すぐに中断", "Stop immediately")}</option>{releaseValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
         <label className="control"><span>{t("ループ開始", "Loop start")}</span><select value={sequence.loopStart} onChange={(e) => updateSequence((s) => { s.loopStart = Number(e.target.value); })}>{sequence.steps.map((_, i) => <option value={i} key={i}>{i + 1}</option>)}</select></label>
       </div>
+      <div className="sequence-summary" aria-label={t("シーケンス", "Sequence")}>{sequence.steps.map((step, index) => <div className="sequence-summary-item" key={index}><span className="sequence-command">{commandLabel(step.mask, twoPlayerOutputs)}</span>{step.frames > 1 && <small>×{step.frames}</small>}{index < sequence.steps.length - 1 && <b aria-hidden="true">›</b>}</div>)}</div>
       <div className="editor-toolbar"><span>{sequence.steps.length} {t("ステップ", "steps")} · {total} tick · {total * frameStep} {t("フレーム", "frames")}</span><div className="editor-mode"><button className={editorMode === "steps" ? "active" : ""} onClick={() => setEditorMode("steps")}>{t("ステップ", "Steps")}</button><button className={editorMode === "grid" ? "active" : ""} onClick={() => setEditorMode("grid")}>{t("タイムライン", "Timeline")}</button></div></div>
       {editorMode === "steps" ? <><div className="steps-list"><div className="steps-head"><span>#</span><span>{t("出力", "Output")}</span><span>tick</span><span /></div>
         {sequence.steps.map((step, index) => (
@@ -475,18 +518,18 @@ function SequenceEditor({ sequence, frameStep, bindings, updateSequence, toggleT
             <button className="insert-step" disabled={sequence.steps.length >= 255} onClick={() => updateSequence((s) => { s.steps.splice(index, 0, { mask: 0, frames: 1 }); if (s.loopStart >= index) s.loopStart++; })}>＋ {index === 0 ? t("先頭に挿入", "Insert at start") : t("ここに挿入", "Insert here")}</button>
             <article className="step-row">
               <div className="step-index">{index + 1}</div>
-              <div className="step-output"><OutputToggles mask={step.mask} onChange={(mask) => updateSequence((s) => { s.steps[index].mask = mask; })} /></div>
+              <div className="step-output"><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={step.mask} onChange={(mask) => updateSequence((s) => { s.steps[index].mask = mask; })} /></div>
               <div className="duration"><input aria-label={t(`ステップ${index + 1}のtick数`, `Ticks in step ${index + 1}`)} type="number" min="1" max="65535" value={step.frames} onChange={(e) => updateSequence((s) => { s.steps[index].frames = Math.max(1, Math.min(65535, Number(e.target.value))); })} /></div>
               <button className="remove-step" disabled={sequence.steps.length === 1} onClick={() => updateSequence((s) => { const oldLoop = s.loopStart; s.steps.splice(index, 1); s.loopStart = oldLoop > index ? oldLoop - 1 : oldLoop === index ? Math.min(index, s.steps.length - 1) : oldLoop; })}>×</button>
             </article>
           </div>
         ))}
-      </div><button className="add-row" disabled={sequence.steps.length >= 255} onClick={() => updateSequence((s) => { s.steps.push({ mask: 0, frames: 1 }); })}>＋ {t("末尾にステップを追加", "Add step at end")}</button></> : <TimelineEditor sequence={sequence} updateSequence={updateSequence} />}
+      </div><button className="add-row" disabled={sequence.steps.length >= 255} onClick={() => updateSequence((s) => { s.steps.push({ mask: 0, frames: 1 }); })}>＋ {t("末尾にステップを追加", "Add step at end")}</button></> : <TimelineEditor sequence={sequence} twoPlayerOutputs={twoPlayerOutputs} updateSequence={updateSequence} />}
     </div>
   );
 }
 
-function TimelineEditor({ sequence, updateSequence }: { sequence: MacroSequence; updateSequence: (fn: (s: MacroSequence) => void) => void }) {
+function TimelineEditor({ sequence, twoPlayerOutputs, updateSequence }: { sequence: MacroSequence; twoPlayerOutputs: boolean; updateSequence: (fn: (s: MacroSequence) => void) => void }) {
   const { t } = useI18n();
   const PAGE_SIZE = 64;
   const [page, setPage] = useState(0);
@@ -509,7 +552,7 @@ function TimelineEditor({ sequence, updateSequence }: { sequence: MacroSequence;
         <div className="piano-grid" style={{ gridTemplateColumns: `76px repeat(${count}, 27px)` }}>
           <div className="piano-corner">{t("出力", "Output")}</div>
           {ticks.map((tick) => <button key={`h${tick}`} className={selected === tick ? "frame-head selected" : "frame-head"} onClick={() => setSelectedTick(tick)}>{tick + 1}</button>)}
-          {OUTPUTS.map((output, outputIndex) => <div className="piano-row" key={output} style={{ display: "contents" }}><div className="piano-label">{output}</div>{ticks.map((tick) => { const active = !!(maskAtTick(sequence, tick) & (1 << outputIndex)); return <button aria-label={t(`${tick + 1} tickの${output}`, `${output} at tick ${tick + 1}`)} key={`${output}-${tick}`} className={`${active ? "note active" : "note"}${selected === tick ? " selected" : ""}`} onClick={() => { setSelectedTick(tick); updateSequence((s) => setTickMask(s, tick, maskAtTick(s, tick) ^ (1 << outputIndex))); }}><i /></button>; })}</div>)}
+          {OUTPUTS.slice(0, twoPlayerOutputs ? 24 : 12).map((output, outputIndex) => <div className="piano-row" key={output} style={{ display: "contents" }}><div className="piano-label">{outputLabel(outputIndex, twoPlayerOutputs)}</div>{ticks.map((tick) => { const active = !!(maskAtTick(sequence, tick) & (1 << outputIndex)); return <button aria-label={t(`${tick + 1} tickの${output}`, `${output} at tick ${tick + 1}`)} key={`${output}-${tick}`} className={`${active ? "note active" : "note"}${selected === tick ? " selected" : ""}`} onClick={() => { setSelectedTick(tick); updateSequence((s) => setTickMask(s, tick, maskAtTick(s, tick) ^ (1 << outputIndex))); }}><i /></button>; })}</div>)}
         </div>
       </div>
       <div className="piano-footer"><button onClick={() => { updateSequence((s) => insertTick(s, total)); setSelectedTick(total); setPage(Math.floor(total / PAGE_SIZE)); }}>{t("末尾に追加", "Add at end")}</button></div>
@@ -517,7 +560,7 @@ function TimelineEditor({ sequence, updateSequence }: { sequence: MacroSequence;
   );
 }
 
-function SelectorEditor({ selector, update, remove }: { selector: StateSelector; update: (fn: (s: StateSelector) => void) => void; remove: () => void }) {
+function SelectorEditor({ selector, twoPlayerOutputs, update, remove }: { selector: StateSelector; twoPlayerOutputs: boolean; update: (fn: (s: StateSelector) => void) => void; remove: () => void }) {
   const { t } = useI18n();
   function setMax(max: number) {
     update((s) => {
@@ -532,14 +575,14 @@ function SelectorEditor({ selector, update, remove }: { selector: StateSelector;
     <div className="editor-panel">
       <div className="editor-titleline"><input className="title-input" aria-label={t("セレクタ名", "Selector name")} value={selector.name} onChange={(e) => update((s) => { s.name = e.target.value; })} /><div className="editor-title-actions"><button onClick={remove}>{t("削除", "Delete")}</button></div></div>
       <div className="control-grid six">
-        <label className="control"><span>{t("増加", "Increment")}</span><select value={selector.increment} onChange={(e) => update((s) => { s.increment = Number(e.target.value); })}>{LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{b}</option>)}</select></label>
-        <label className="control"><span>{t("減少", "Decrement")}</span><select value={selector.decrement} onChange={(e) => update((s) => { s.decrement = Number(e.target.value); })}>{LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{b}</option>)}</select></label>
+        <label className="control"><span>{t("増加", "Increment")}</span><select value={selector.increment} onChange={(e) => update((s) => { s.increment = Number(e.target.value); })}>{LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{buttonLabel(b)}</option>)}</select></label>
+        <label className="control"><span>{t("減少", "Decrement")}</span><select value={selector.decrement} onChange={(e) => update((s) => { s.decrement = Number(e.target.value); })}>{LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{buttonLabel(b)}</option>)}</select></label>
         <label className="control"><span>{t("最大値", "Maximum")}</span><input type="number" min={selector.min} max={selector.min + 63} value={selector.max} onChange={(e) => setMax(Number(e.target.value))} /></label>
         <label className="control"><span>{t("初期値", "Initial")}</span><input type="number" min={selector.min} max={selector.max} value={selector.initial} onChange={(e) => update((s) => { s.initial = Number(e.target.value); })} /></label>
         <label className="control"><span>{t("端の動作", "At limits")}</span><select value={selector.wrap ? "wrap" : "clamp"} onChange={(e) => update((s) => { s.wrap = e.target.value === "wrap"; })}><option value="clamp">{t("停止", "Stop")}</option><option value="wrap">{t("循環", "Wrap")}</option></select></label>
         <label className="control"><span>{t("無出力フレーム", "Neutral frames")}</span><input type="number" min="0" max="255" value={selector.neutralFrames} onChange={(e) => update((s) => { s.neutralFrames = Number(e.target.value); })} /></label>
       </div>
-      <div className="state-table"><div className="state-table-head"><span>{t("状態", "State")}</span><span>{t("名前", "Name")}</span><span>{t("出力", "Output")}</span></div>{selector.outputs.map((mask, index) => <div className="state-row" key={index}><strong>{selector.min + index}</strong><input className="state-name-input" aria-label={t(`状態${selector.min + index}の名前`, `Name of state ${selector.min + index}`)} value={selector.stateNames[index]} onChange={(event) => update((s) => { s.stateNames[index] = event.target.value; })} /><OutputToggles mask={mask} onChange={(value) => update((s) => { s.outputs[index] = value; })} /></div>)}</div>
+      <div className="state-table"><div className="state-table-head"><span>{t("状態", "State")}</span><span>{t("名前", "Name")}</span><span>{t("出力", "Output")}</span></div>{selector.outputs.map((mask, index) => <div className="state-row" key={index}><strong>{selector.min + index}</strong><input className="state-name-input" aria-label={t(`状態${selector.min + index}の名前`, `Name of state ${selector.min + index}`)} value={selector.stateNames[index]} onChange={(event) => update((s) => { s.stateNames[index] = event.target.value; })} /><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={mask} onChange={(value) => update((s) => { s.outputs[index] = value; })} /></div>)}</div>
     </div>
   );
 }
@@ -558,7 +601,7 @@ function AssignmentOverview({ profile, selectedMacroSet, setSelectedMacroSet }: 
         const rapid = profile.rapidFire[logicalId];
         const rate = 60 / rapid.divisor;
         const rateLabel = `1/${rapid.divisor} (${Number.isInteger(rate) ? rate : rate.toFixed(1)}${locale === "ja" ? "連" : "/s"})`;
-        return <article className="overview-row" key={button}><div className="overview-logical"><strong>{button}</strong></div><div className="tag-list">{maskLabels(profile.mappings[logicalId]).map((label) => <span key={label}>{label}</span>)}{profile.mappings[logicalId] === 0 && <em>—</em>}</div><div className="overview-rapid">{!rapid.override ? t("本体設定", "Hardware setting") : rapid.triggerType === "disabled" ? t("連射無効", "Disabled") : `${rapidLabels[rapid.triggerType]} ${rateLabel}`}</div><div className="tag-list macro-tags">{macros.map(({ macro, binding }) => macro && <span key={macro.id}>{macro.name}{binding.transform !== "none" ? ` · ${transformLabels[binding.transform]}` : ""}</span>)}{macros.length === 0 && <em>—</em>}</div><div className="tag-list modifier-tags">{modifiers.map((label) => <span key={label}>{label}</span>)}{modifiers.length === 0 && <em>—</em>}</div></article>;
+        return <article className="overview-row" key={button}><div className="overview-logical"><strong>{buttonLabel(button)}</strong></div><div className="tag-list">{maskLabels(profile.mappings[logicalId], profile.twoPlayerOutputs).map((output) => <span key={output.key}>{output.label}</span>)}{profile.mappings[logicalId] === 0 && <em>—</em>}</div><div className="overview-rapid">{!rapid.override ? t("本体設定", "Hardware setting") : rapid.triggerType === "disabled" ? t("連射無効", "Disabled") : `${rapidLabels[rapid.triggerType]} ${rateLabel}`}</div><div className="tag-list macro-tags">{macros.map(({ macro, binding }) => macro && <span key={macro.id}>{macro.name}{binding.transform !== "none" ? ` · ${transformLabels[binding.transform]}` : ""}</span>)}{macros.length === 0 && <em>—</em>}</div><div className="tag-list modifier-tags">{modifiers.map((label) => <span key={label}>{label}</span>)}{modifiers.length === 0 && <em>—</em>}</div></article>;
       })}</div>
     </section>
   );

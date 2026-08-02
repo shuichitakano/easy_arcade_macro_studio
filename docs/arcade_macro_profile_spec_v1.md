@@ -13,7 +13,7 @@
 - PCエディタと本体で交換する検証可能なバイナリプロファイル
 - 人間、PCエディタ、AI、外部ツールで交換できる編集用Profile JSON
 
-デフォルトプロファイルではCOIN〜Fを同名出力へ1対1で割り当て、G〜Lは出力なしとする。マクロとセレクタを使わない場合は既存動作と一致しなければならない。
+デフォルトプロファイルでは1P側のCOIN〜Fを同名出力へ1対1で割り当て、G〜Lは出力なし、2P出力は無効とする。マクロとセレクタを使わない場合は既存動作と一致しなければならない。
 
 ## 2. ファイル名と容量
 
@@ -31,7 +31,9 @@
 
 論理ボタンは18個で、ID順にCOIN、START、UP、DOWN、LEFT、RIGHT、A〜Lとする。G〜Lは対応する基板出力を持たない6個の仮想論理ボタンである。
 
-実基板出力は12ビットで、bit 0からCOIN、START、UP、DOWN、LEFT、RIGHT、A〜Fとする。bit 12〜15は予約であり、v1.0では常に0とする。
+実基板出力マスクは24ビットとする。bit 0〜11を1P側のCOIN、START、UP、DOWN、LEFT、RIGHT、A〜F、bit 12〜23を同じ順序の2P側出力とする。プロファイルの`Two Player Outputs`が無効な場合、bit 12〜23は0でなければならない。
+
+2P出力は論理入力を増やす機能ではない。論理ボタンは常に18個のままであり、1つの論理ボタン、マクロステップ、セレクタ状態から1P側と2P側へ同時出力できる。
 
 物理コントローラー入力から論理ボタンへの割り当てはEASY ARCADE本体の既存設定であり、ゲームプロファイルには含めない。PCエディタが扱うのは、物理機器に依存しない「論理ボタンからゲーム内機能へのルーティング」である。
 
@@ -77,7 +79,7 @@
 
 マクロ定義とキー割り当ては別テーブルとする。各バインディングは1-byteの`Set ID`を持ち、現在のSet IDと一致するバインディングだけを起動する。同じマクロと論理ボタンの組を複数セットで有効にする場合は、Set IDごとに独立したバインディングを置く。したがって再生属性と出力変換もセットごとに設定できる。
 
-各バインディングは出力変換として「なし」「左右反転」「上下反転」「上下左右反転」のいずれかを持つ。左右反転はLEFTとRIGHT、上下反転はUPとDOWNの出力ビットを各ステップの出力時に交換し、その他の出力ビットは変更しない。変換はシーケンス定義を書き換えず、再生インスタンスごとに適用する。同じシーケンスを複数入力へ異なる変換で割り当ててよい。
+各バインディングは出力変換として「なし」「左右反転」「上下反転」「上下左右反転」のいずれかを持つ。左右反転はLEFTとRIGHT、上下反転はUPとDOWNの出力ビットを各ステップの出力時に交換し、その他の出力ビットは変更しない。2P出力が有効な場合、この交換を1P側と2P側へそれぞれ独立に適用する。変換はシーケンス定義を書き換えず、再生インスタンスごとに適用する。同じシーケンスを複数入力へ異なる変換で割り当ててよい。
 
 再生属性は次の組み合わせとする。
 
@@ -98,14 +100,14 @@
 
 増減は生論理状態の立ち上がりで1回だけ行う。同一フレームに増加と減少があった場合は変更しない。ニュートラル期間中の追加操作は状態を即時更新し、残り期間を設定値へ戻す。
 
-各状態出力は12ビットの実基板出力マスクである。ニュートラル期間中はそのセレクタの出力を0とする。複数セレクタ、直接マッピング、マクロが同じ出力を生成した場合はOR合成する。セレクタは他の出力源を占有または消去しない。
+各状態出力は24ビットの実基板出力マスクである。ニュートラル期間中はそのセレクタの出力を0とする。複数セレクタ、直接マッピング、マクロが同じ出力を生成した場合はOR合成する。セレクタは他の出力源を占有または消去しない。
 
 ## 8. v1.0実装上限
 
 | 項目 | 上限 |
 |---|---:|
 | 論理ボタン数 | 18 |
-| 実基板出力数 | 12 |
+| 実基板出力数 | 24（1P 12 + 2P 12） |
 | シーケンス定義数 | 64 |
 | シーケンスバインディング数 | 256 |
 | マクロセット数 | 16 |
@@ -137,6 +139,7 @@ Profile JSON自体に8192 bytesの上限は設けない。ただし、v1.0本体
 | `name` | 必須 | プロファイル名 |
 | `description` | 必須 | 説明。空文字列可 |
 | `frameStep` | 必須 | 第6章の共通Frame Step |
+| `twoPlayerOutputs` | 任意 | 2P側出力を使用する場合は`true`。省略時は`false` |
 | `mappings` | 必須 | 論理ボタンから実基板出力への直接マッピング |
 | `rapidFire` | 必須 | 論理ボタンごとの連射設定 |
 | `macroSets` | 必須 | マクロセット定義 |
@@ -152,7 +155,8 @@ Profile JSON自体に8192 bytesの上限は設けない。ただし、v1.0本体
 Profile JSONでは、論理ボタンと実基板出力をビット番号や数値マスクではなく、第3章で定義した名前で記述する。
 
 - 論理ボタン名: `COIN`、`START`、`UP`、`DOWN`、`LEFT`、`RIGHT`、`A`〜`L`
-- 実基板出力名: `COIN`、`START`、`UP`、`DOWN`、`LEFT`、`RIGHT`、`A`〜`F`
+- 1P実基板出力名: `COIN`、`START`、`UP`、`DOWN`、`LEFT`、`RIGHT`、`A`〜`F`
+- 2P実基板出力名: `2P_COIN`、`2P_START`、`2P_UP`、`2P_DOWN`、`2P_LEFT`、`2P_RIGHT`、`2P_A`〜`2P_F`
 - 複数出力: 出力名のJSON array。出力なしは空array
 
 `mappings`と`rapidFire`は論理ボタン名をキーとするobjectとし、18個すべての論理ボタンを明示する。正規化して保存する際は、第3章のID順にキーと配列要素を並べる。
@@ -278,7 +282,7 @@ CRCはCRC-32/ISO-HDLC（poly `0x04C11DB7`、refin/refout true、init/xorout `0xF
 
 ### Direct Mapping
 
-ID順の18個のuint16出力マスク。Payloadは36 bytes固定。
+ID順の18個のuint24出力マスク。各uint24は下位byteから格納し、Payloadは54 bytes固定。
 
 ### Sequence Binding
 
@@ -286,11 +290,11 @@ ID順の18個のuint16出力マスク。Payloadは36 bytes固定。
 
 ### Sequence Definitions
 
-先頭1 byteが定義数。各定義はSequence ID、Step Count、Loop Start Step、Reservedの4 bytesで、Reservedは0。続く各ステップはuint16 Output Maskとuint16 Duration Ticksの4 bytes。
+先頭1 byteが定義数。各定義はSequence ID、Step Count、Loop Start Step、Reservedの4 bytesで、Reservedは0。続く各ステップはuint24 Output Maskとuint16 Duration Ticksの5 bytes。
 
 ### State Selectors
 
-先頭1 byteが定義数。各定義ヘッダは10 bytesで、Selector ID、Increment Logical ID、Decrement Logical ID、Minimum、Maximum、Initial、Flags、Neutral Gap Frames、State Count、Reserved。Flags bit 0はWrap、その他は0。続けてState Count個のuint16出力マスクを置く。
+先頭1 byteが定義数。各定義ヘッダは10 bytesで、Selector ID、Increment Logical ID、Decrement Logical ID、Minimum、Maximum、Initial、Flags、Neutral Gap Frames、State Count、Reserved。Flags bit 0はWrap、その他は0。続けてState Count個のuint24出力マスクを置く。
 
 ### Rapid Fire Overrides
 
@@ -320,7 +324,9 @@ Payloadは2 bytes固定とする。
 | Byte | Field | 内容 |
 |---:|---|---|
 | 0 | Frame Step | プロファイル共通の1 tickあたりのフレーム数。1〜255 |
-| 1 | Reserved | 0 |
+| 1 | Flags | bit 0: Two Player Outputs、bit 1〜7: 0 |
+
+Two Player Outputsが0の場合、すべての出力マスクのbit 12〜23は0でなければならない。
 
 初期試作版との読み込み互換のため、Profile SettingsがないファイルではFrame Stepを1として扱ってよい。また、Sequence DefinitionsのReservedに旧マクロ単位のFrame Stepが残るファイルは、最初の有効値をプロファイル共通値へ移行してよい。新規保存時はProfile Settingsへ格納し、Sequence DefinitionsのReservedは0とする。
 
@@ -419,11 +425,15 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 
 マクロ起動入力と左右・上下反転フラグは、論理ボタンごとの同一UI要素内で編集する。反転属性だけを別一覧へ分離しない。
 
-マクロ編集にはステップ表示に加え、横軸をtick、縦軸を12個の実基板出力とするピアノロール形式の「タイムライン」表示を設ける。別の要約タイムラインは設けない。1マスは1 tickとし、セル操作でそのtickの出力ビットをON/OFFできる。tickの前後挿入、削除、末尾追加に対応する。実フレーム長は`総tick数 × Frame Step`として併記する。64 tickを超えるシーケンスは64 tick単位で表示ページを分割し、その場合だけページ切替UIを表示する。ページは編集上の表示区切りであり、再生動作には影響しない。タイムライン編集後は、連続する同一出力マスクをステップへ再圧縮する。
+マクロ編集にはステップ表示に加え、横軸をtick、縦軸を実基板出力とするピアノロール形式の「タイムライン」表示を設ける。1Pモードでは12行、2Pモードでは1P・2Pを合わせた24行を表示する。1マスは1 tickとし、セル操作でそのtickの出力ビットをON/OFFできる。tickの前後挿入、削除、末尾追加に対応する。実フレーム長は`総tick数 × Frame Step`として併記する。64 tickを超えるシーケンスは64 tick単位で表示ページを分割し、その場合だけページ切替UIを表示する。ページは編集上の表示区切りであり、再生動作には影響しない。タイムライン編集後は、連続する同一出力マスクをステップへ再圧縮する。
+
+ステップ列全体を素早く読めるように、編集形式とは別にコンパクトなシーケンス要約を常時表示する。同一ステップ内の上下・左右入力は方向記号へまとめ、たとえばDOWN+LEFT+A+Bを`↙+A+B`、LEFT+RIGHTを`←+→`と表示する。継続tick数が2以上なら`×N`を付け、2P出力を含む場合は1P/2Pを区別する。
 
 生成順は`0x01`、`0x02`、`0x03`、`0x04`、`0x05`、`0x06`、`0x07`、`0x08`とし、バインディングはLogical ID・Sequence ID順、シーケンスとセレクタはID順に出力する。同じ編集内容は同一バイト列にする。生成前に本体と同等の検証を行う。
 
 初期試作エディタが生成したType `0x7F`のJSON Metadataは正式なv1.0形式に含めない。PCエディタは既存の共有データを移行するために限り読み込んでよいが、新規保存してはならない。EASY ARCADE本体はType `0x7F`へ対応する必要がない。
+
+同様に、初期試作エディタが生成したuint16出力マスクのDirect Mapping、Sequence Definitions、State SelectorsはPCエディタが移行読み込みしてよい。新規保存は常に本章のuint24形式とし、EASY ARCADE本体はuint16試作形式へ対応する必要がない。
 
 オンライン共有では、サーバー内部の保存形式としてProfile JSONまたは同等の正規化済みデータを使用できる。共有サイトからダウンロードする実機向け成果物は、検証済みProfile JSONからサーバーまたはエディタが生成した`.eamacro`とする。REST APIやMCPを追加する場合も、独自のAI専用形式を設けず、Profile JSONを共通の入出力形式とする。
 
