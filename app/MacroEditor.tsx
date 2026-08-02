@@ -12,6 +12,7 @@ import { listStoredProfiles, removeStoredProfile, saveStoredProfile, StoredProfi
 import { deleteTick, insertTick, maskAtTick, setTickMask, totalTicks } from "./sequenceEditing";
 import { SharedProfiles } from "./SharedProfiles";
 import { LanguageSwitch, useI18n } from "./i18n";
+import { uniqueDownloadFileName } from "./downloadName";
 
 type Tab = "mapping" | "macro" | "macrosets" | "selector" | "overview" | "share";
 
@@ -47,6 +48,7 @@ function transformAxes(transform: OutputTransform) { return { horizontal: transf
 function transformFromAxes(horizontal: boolean, vertical: boolean): OutputTransform { return horizontal && vertical ? "flipBoth" : horizontal ? "flipHorizontal" : vertical ? "flipVertical" : "none"; }
 function newProfileId() { return crypto.randomUUID(); }
 function profileFileName(name: string, extension = ".eamacro") { return `${name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_") || "profile"}${extension}`; }
+const DOWNLOAD_URL_LIFETIME_MS = 60_000;
 
 type SaveFileHandle = { createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> };
 type FilePickerWindow = Window & { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<SaveFileHandle> };
@@ -187,11 +189,15 @@ export function MacroEditor() {
       return;
     }
     const href = URL.createObjectURL(blob);
+    const downloadName = uniqueDownloadFileName(suggestedName);
     const link = document.createElement("a");
-    link.href = href; link.download = suggestedName;
+    link.href = href; link.download = downloadName;
     document.body.append(link); link.click(); link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(href), 0);
-    showNotice(t(`${suggestedName}をダウンロードしました`, `Downloaded ${suggestedName}`));
+    // Some browsers start the actual download after the click task completes.
+    // Revoking immediately can leave the previous same-named file as the only
+    // usable download, which looks like the latest edit was not exported.
+    window.setTimeout(() => URL.revokeObjectURL(href), DOWNLOAD_URL_LIFETIME_MS);
+    showNotice(t(`${downloadName}をダウンロードしました`, `Downloaded ${downloadName}`));
   }
 
   async function saveAsMacro() {

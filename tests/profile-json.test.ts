@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { compileProfile, createDefaultProfile, EDITOR_LOGICAL_BUTTONS, LOGICAL_BUTTONS, parseProfile } from "../app/profile";
 import { parseProfileJsonText, ProfileJsonError, serializeProfileJson, toProfileJson } from "../app/profileJson";
+import { uniqueDownloadFileName } from "../app/downloadName";
 
 function sampleProfile() {
   const profile = createDefaultProfile();
@@ -112,6 +113,12 @@ test("the editor exposes 16 logical buttons while the format reserves 32", () =>
   assert.equal(LOGICAL_BUTTONS.length, 32);
   assert.equal(LOGICAL_BUTTONS.at(-1), "Z");
   assert.equal(createDefaultProfile().mappings.length, 32);
+});
+
+test("fallback downloads use unique, recognizable file names", () => {
+  const now = new Date(2026, 7, 2, 19, 45, 6, 7);
+  assert.equal(uniqueDownloadFileName("My Profile.eamacro", now), "My Profile-20260802-194506-007.eamacro");
+  assert.equal(uniqueDownloadFileName("My Profile.eamacro.json", now), "My Profile-20260802-194506-007.eamacro.json");
 });
 
 test("Profile JSON pads omitted reserved logical buttons", () => {
