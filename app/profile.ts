@@ -1,6 +1,13 @@
-export const LOGICAL_BUTTONS = [
+export const EDITOR_LOGICAL_BUTTONS = [
   "COIN", "START", "UP", "DOWN", "LEFT", "RIGHT",
-  "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
+  "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
+] as const;
+
+// The file format reserves 32 logical-button IDs. The regular editor exposes
+// the first 16; the remaining IDs stay available for future hardware/editors.
+export const LOGICAL_BUTTONS = [
+  ...EDITOR_LOGICAL_BUTTONS,
+  "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
 ] as const;
 
 export const PLAYER_OUTPUTS = [
@@ -350,8 +357,9 @@ export function parseProfile(bytes: Uint8Array): Profile {
   }
 
   const direct = sections.get(1), bindingData = sections.get(2), defs = sections.get(3), selectorData = sections.get(4), rapidData = sections.get(5), macroSetData = sections.get(6), profileSettings = sections.get(7);
-  if (!direct || ![34, LOGICAL_BUTTONS.length * 2, LOGICAL_BUTTONS.length * 3].includes(direct.length) || !bindingData) throw new Error("必須セクションがありません");
-  const outputWidth = direct.length === LOGICAL_BUTTONS.length * 3 ? 3 : 2;
+  const supportedDirectLengths = [34, 36, 54, LOGICAL_BUTTONS.length * 3];
+  if (!direct || !supportedDirectLengths.includes(direct.length) || !bindingData) throw new Error("必須セクションがありません");
+  const outputWidth = direct.length === 54 || direct.length === LOGICAL_BUTTONS.length * 3 ? 3 : 2;
   const directView = new DataView(direct.buffer, direct.byteOffset, direct.byteLength);
   const storedLogicalCount = direct.length / outputWidth;
   const mappings = Array.from({ length: LOGICAL_BUTTONS.length }, (_, i) => i < storedLogicalCount ? outputWidth === 3 ? read24(direct, i * 3) : directView.getUint16(i * 2, true) : 0);
@@ -440,7 +448,7 @@ export function parseProfile(bytes: Uint8Array): Profile {
 
   const rapidFire = inheritedRapidFire();
   if (rapidData) {
-    if (![51, LOGICAL_BUTTONS.length * 3].includes(rapidData.length)) throw new Error("Rapid Fire Overridesの長さが不正です");
+    if (![51, 54, LOGICAL_BUTTONS.length * 3].includes(rapidData.length)) throw new Error("Rapid Fire Overridesの長さが不正です");
     for (let i = 0; i < rapidData.length / 3; i++) {
       if (minor === 2) {
         const oldMode = rapidData[i * 3], oldOn = rapidData[i * 3 + 1], oldOff = rapidData[i * 3 + 2];

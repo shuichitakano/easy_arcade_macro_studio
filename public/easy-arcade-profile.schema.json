@@ -120,7 +120,7 @@
   },
   "$defs": {
     "logicalButton": {
-      "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
+      "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
     },
     "output": {
       "enum": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "2P_COIN", "2P_START", "2P_UP", "2P_DOWN", "2P_LEFT", "2P_RIGHT", "2P_A", "2P_B", "2P_C", "2P_D", "2P_E", "2P_F"]
@@ -144,7 +144,7 @@
     "mappings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
+      "required": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
       "properties": {
         "COIN": { "$ref": "#/$defs/outputList" },
         "START": { "$ref": "#/$defs/outputList" },
@@ -163,13 +163,27 @@
         "I": { "$ref": "#/$defs/outputList" },
         "J": { "$ref": "#/$defs/outputList" },
         "K": { "$ref": "#/$defs/outputList" },
-        "L": { "$ref": "#/$defs/outputList" }
+        "L": { "$ref": "#/$defs/outputList" },
+        "M": { "$ref": "#/$defs/outputList" },
+        "N": { "$ref": "#/$defs/outputList" },
+        "O": { "$ref": "#/$defs/outputList" },
+        "P": { "$ref": "#/$defs/outputList" },
+        "Q": { "$ref": "#/$defs/outputList" },
+        "R": { "$ref": "#/$defs/outputList" },
+        "S": { "$ref": "#/$defs/outputList" },
+        "T": { "$ref": "#/$defs/outputList" },
+        "U": { "$ref": "#/$defs/outputList" },
+        "V": { "$ref": "#/$defs/outputList" },
+        "W": { "$ref": "#/$defs/outputList" },
+        "X": { "$ref": "#/$defs/outputList" },
+        "Y": { "$ref": "#/$defs/outputList" },
+        "Z": { "$ref": "#/$defs/outputList" }
       }
     },
     "rapidFire": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
+      "required": ["COIN", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
       "properties": {
         "COIN": { "$ref": "#/$defs/rapidFireSetting" },
         "START": { "$ref": "#/$defs/rapidFireSetting" },
@@ -188,7 +202,21 @@
         "I": { "$ref": "#/$defs/rapidFireSetting" },
         "J": { "$ref": "#/$defs/rapidFireSetting" },
         "K": { "$ref": "#/$defs/rapidFireSetting" },
-        "L": { "$ref": "#/$defs/rapidFireSetting" }
+        "L": { "$ref": "#/$defs/rapidFireSetting" },
+        "M": { "$ref": "#/$defs/rapidFireSetting" },
+        "N": { "$ref": "#/$defs/rapidFireSetting" },
+        "O": { "$ref": "#/$defs/rapidFireSetting" },
+        "P": { "$ref": "#/$defs/rapidFireSetting" },
+        "Q": { "$ref": "#/$defs/rapidFireSetting" },
+        "R": { "$ref": "#/$defs/rapidFireSetting" },
+        "S": { "$ref": "#/$defs/rapidFireSetting" },
+        "T": { "$ref": "#/$defs/rapidFireSetting" },
+        "U": { "$ref": "#/$defs/rapidFireSetting" },
+        "V": { "$ref": "#/$defs/rapidFireSetting" },
+        "W": { "$ref": "#/$defs/rapidFireSetting" },
+        "X": { "$ref": "#/$defs/rapidFireSetting" },
+        "Y": { "$ref": "#/$defs/rapidFireSetting" },
+        "Z": { "$ref": "#/$defs/rapidFireSetting" }
       }
     }
   }

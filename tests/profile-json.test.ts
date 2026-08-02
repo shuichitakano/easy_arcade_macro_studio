@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compileProfile, createDefaultProfile, parseProfile } from "../app/profile";
+import { compileProfile, createDefaultProfile, EDITOR_LOGICAL_BUTTONS, LOGICAL_BUTTONS, parseProfile } from "../app/profile";
 import { parseProfileJsonText, ProfileJsonError, serializeProfileJson, toProfileJson } from "../app/profileJson";
 
 function sampleProfile() {
@@ -76,7 +76,8 @@ function asPrototype16Bit(bytes: Uint8Array) {
         converted.push(...source.subarray(position, position + 10)); position += 10;
         for (let state = 0; state < count; state++, position += 3) converted.push(source[position], source[position + 1]);
       }
-    } else converted.push(...source);
+    } else if (type === 0x05) converted.push(...source.subarray(0, 54));
+    else converted.push(...source);
     payload.push(type, 0, converted.length & 0xff, converted.length >>> 8, ...converted);
     cursor += 4 + length;
   }
@@ -103,6 +104,26 @@ test("Profile JSON uses named buttons and outputs", () => {
   assert.equal(json.bindings[0].logicalButton, "G");
   assert.deepEqual(json.sequences[0].steps[1].outputs, ["DOWN", "RIGHT"]);
   assert.deepEqual(json.selectors[0].states[1], { value: 1, name: "HIGH", outputs: ["A"] });
+});
+
+test("the editor exposes 16 logical buttons while the format reserves 32", () => {
+  assert.equal(EDITOR_LOGICAL_BUTTONS.length, 16);
+  assert.equal(EDITOR_LOGICAL_BUTTONS.at(-1), "J");
+  assert.equal(LOGICAL_BUTTONS.length, 32);
+  assert.equal(LOGICAL_BUTTONS.at(-1), "Z");
+  assert.equal(createDefaultProfile().mappings.length, 32);
+});
+
+test("Profile JSON pads omitted reserved logical buttons", () => {
+  const json = toProfileJson(sampleProfile());
+  for (const button of LOGICAL_BUTTONS.slice(EDITOR_LOGICAL_BUTTONS.length)) {
+    delete json.mappings[button];
+    delete json.rapidFire[button];
+  }
+  const parsed = parseProfileJsonText(JSON.stringify(json));
+  assert.equal(parsed.mappings.length, 32);
+  assert.ok(parsed.mappings.slice(16).every((mask) => mask === 0));
+  assert.ok(parsed.rapidFire.slice(16).every((rapid) => !rapid.override));
 });
 
 test("Profile JSON rejects unknown executable fields", () => {
@@ -163,7 +184,7 @@ test("2P outputs round-trip through Profile JSON and 24-bit .eamacro masks", () 
     if (type === 0x07) settingsFlags = bytes[cursor + 5];
     cursor += 4 + length;
   }
-  assert.equal(directLength, 54);
+  assert.equal(directLength, 96);
   assert.equal(settingsFlags, 1);
   assert.deepEqual(parseProfile(bytes), withoutMetadata(source));
 });

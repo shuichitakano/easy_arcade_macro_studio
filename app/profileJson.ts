@@ -1,5 +1,5 @@
 import {
-  LOGICAL_BUTTONS, OUTPUTS, OutputTransform, Profile, ProfileMetadata,
+  EDITOR_LOGICAL_BUTTONS, LOGICAL_BUTTONS, OUTPUTS, OutputTransform, Profile, ProfileMetadata,
   ProfileVerification, RapidFireOverride, RapidTriggerType, validateProfile,
 } from "./profile";
 
@@ -125,12 +125,15 @@ export function parseProfileJson(value: unknown): Profile {
   if (root.format !== "easy-arcade-profile") fail("$.format", "easy-arcade-profileである必要があります", "must be easy-arcade-profile");
   if (root.schemaVersion !== 1) fail("$.schemaVersion", "未対応のProfile JSONバージョンです", "is an unsupported Profile JSON version");
 
-  const mappingObject = exactObject(root.mappings, "$.mappings", LOGICAL_BUTTONS);
-  const mappings = LOGICAL_BUTTONS.map((button) => maskFor(outputListAt(mappingObject[button], `$.mappings.${button}`)));
+  const mappingObject = exactObject(root.mappings, "$.mappings", LOGICAL_BUTTONS, EDITOR_LOGICAL_BUTTONS);
+  const mappings = LOGICAL_BUTTONS.map((button) => Object.hasOwn(mappingObject, button)
+    ? maskFor(outputListAt(mappingObject[button], `$.mappings.${button}`))
+    : 0);
 
-  const rapidObject = exactObject(root.rapidFire, "$.rapidFire", LOGICAL_BUTTONS);
+  const rapidObject = exactObject(root.rapidFire, "$.rapidFire", LOGICAL_BUTTONS, EDITOR_LOGICAL_BUTTONS);
   const triggerTypes = ["disabled", "sync", "front", "back"] as const satisfies readonly RapidTriggerType[];
   const rapidFire = LOGICAL_BUTTONS.map((button): RapidFireOverride => {
+    if (!Object.hasOwn(rapidObject, button)) return { override: false, triggerType: "disabled", divisor: 2 };
     const item = exactObject(rapidObject[button], `$.rapidFire.${button}`, ["override", "triggerType", "divisor"]);
     return {
       override: booleanAt(item.override, `$.rapidFire.${button}.override`),

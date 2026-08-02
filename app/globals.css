@@ -164,7 +164,7 @@ button { cursor: pointer; }
 .macro-assignment-panel { padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .trigger-heading { margin-bottom: 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 .trigger-heading > small { color: var(--muted); font-size: 11px; }
-.trigger-buttons { display: grid; grid-template-columns: repeat(9, minmax(92px, 1fr)); gap: 6px; }
+.trigger-buttons { display: grid; grid-template-columns: repeat(8, minmax(92px, 1fr)); gap: 6px; }
 .trigger-card { min-width: 0; height: 36px; display: grid; grid-template-columns: minmax(40px, 1fr) 26px 26px; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
 .trigger-card.active { border-color: #93c5fd; background: var(--accent-soft); }
 .trigger-main { min-width: 0; padding: 0 8px; border: 0; background: transparent; font-size: 11px; font-weight: 650; text-align: left; }
@@ -324,6 +324,12 @@ a.share-account:hover { color: var(--accent); }
 .help-section ul, .help-section ol { margin: 0; padding-left: 22px; }
 .help-section li + li { margin-top: 7px; }
 .help-section code { padding: 2px 5px; border-radius: 4px; background: var(--subtle); color: #334155; font-size: .9em; }
+.limits-table { margin-bottom: 18px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.limits-row { display: grid; grid-template-columns: minmax(170px, .8fr) minmax(0, 1.2fr); }
+.limits-row + .limits-row { border-top: 1px solid var(--line); }
+.limits-row strong, .limits-row span { padding: 10px 12px; line-height: 1.5; }
+.limits-row strong { background: var(--subtle); font-size: 13px; }
+.limits-row span { color: #52525b; }
 .concept-flow { margin: 0 0 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .concept-flow span { padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fafafa; color: #334155; font-size: 12px; font-weight: 600; }
 .concept-flow b { color: #94a3b8; font-weight: 500; }
@@ -334,7 +340,7 @@ a.share-account:hover { color: var(--accent); }
   .rail-list { display: flex; overflow-x: auto; }
   .rail-card { min-width: 190px; }
   .control-grid.six { grid-template-columns: repeat(3, 1fr); }
-  .trigger-buttons { grid-template-columns: repeat(6, minmax(92px, 1fr)); }
+  .trigger-buttons { grid-template-columns: repeat(4, minmax(92px, 1fr)); }
   .steps-head, .step-row { grid-template-columns: 44px minmax(380px, 1fr) 86px 36px; }
   .profile-library { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .publish-fields { grid-template-columns: 1fr 1fr; }
@@ -372,4 +378,6 @@ a.share-account:hover { color: var(--accent); }
   .library-tools { padding-inline: 16px; }
   .profile-library { padding-inline: 16px; grid-template-columns: 1fr; }
   .app-toast { top: 236px; }
+  .limits-row { grid-template-columns: 1fr; }
+  .limits-row span { padding-top: 8px; }
 }

@@ -50,6 +50,8 @@ test("renders help page", async () => {
   assert.match(html, /編集画面/);
   assert.match(html, /<h2>共有<\/h2>/);
   assert.match(html, /<h2>Profile JSON<\/h2>/);
+  assert.match(html, /仕様と制限/);
+  assert.match(html, /8192 bytes/);
   assert.match(html, /https:\/\/studio\.easy-arcade\.net\/easy-arcade-profile\.schema\.json/);
   assert.match(html, /閲覧とダウンロードにはログインが不要です/);
   assert.match(html, /エディタへ戻る/);

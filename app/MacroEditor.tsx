@@ -4,7 +4,7 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  bindingsFor, compileProfile, createDefaultProfile, LOGICAL_BUTTONS, MacroSequence,
+  bindingsFor, compileProfile, createDefaultProfile, EDITOR_LOGICAL_BUTTONS, MacroSequence,
   localizeProfileMessage, MAX_SEQUENCE_BINDINGS, normalizeProfile, OUTPUTS, OutputTransform, parseProfile, PLAYER_OUTPUTS, Profile, SequenceBinding, StateSelector, validateProfile,
 } from "./profile";
 import { parseProfileJsonText, ProfileJsonError, serializeProfileJson } from "./profileJson";
@@ -383,7 +383,7 @@ export function MacroEditor() {
           <div className="section-heading"><div><h2>{t("ボタン設定", "Button Mapping")}</h2></div><p>{t("連射を上書きしない場合は本体設定を使用します。", "Rapid fire inherits the hardware setting unless overridden.")}</p></div>
           <div className="routing-head button-head"><span>{t("論理ボタン", "Logical button")}</span><span>{t("出力", "Output")}</span><span>{t("連射", "Rapid fire")}</span></div>
           <div className="mapping-grid">
-            {LOGICAL_BUTTONS.map((button, index) => (
+            {EDITOR_LOGICAL_BUTTONS.map((button, index) => (
               <article className="mapping-row button-row" key={button}>
                 <div className="logical-label"><strong>{buttonLabel(button)}</strong></div>
                 <div className="direct-route"><OutputToggles twoPlayerOutputs={profile.twoPlayerOutputs} mask={profile.mappings[index]} onChange={(mask) => update((d) => { d.mappings[index] = mask; })} /></div>
@@ -405,20 +405,20 @@ export function MacroEditor() {
               <div className="rail-title"><h2>{t("マクロ", "Macros")}</h2><button onClick={addSequence} aria-label={t("マクロを追加", "Add macro")}>＋</button></div>
               <div className="rail-list">
                 {profile.sequences.map((item, index) => {
-                  const count = bindingsFor(profile, item.id).filter((binding) => binding.setId === selectedMacroSet).length;
+                  const count = bindingsFor(profile, item.id).filter((binding) => binding.setId === selectedMacroSet && binding.logicalId < EDITOR_LOGICAL_BUTTONS.length).length;
                   return <button key={item.id} className={index === selectedSequence ? "rail-card active" : "rail-card"} onClick={() => setSelectedSequence(index)}>
                     <strong>{item.name}</strong><small>{count ? t(`${count}入力`, `${count} ${count === 1 ? "input" : "inputs"}`) : t("未割り当て", "Unassigned")} · {item.steps.reduce((n, s) => n + s.frames, 0) * profile.frameStep} {t("フレーム", "frames")}</small>
                   </button>;
                 })}
               </div>
             </aside>
-            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet)} updateSequence={(mutator) => update((d) => mutator(d.sequences[selectedSequence]))}
+            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet && binding.logicalId < EDITOR_LOGICAL_BUTTONS.length)} updateSequence={(mutator) => update((d) => mutator(d.sequences[selectedSequence]))}
               toggleTrigger={(logicalId) => update((d) => {
                 const found = d.sequenceBindings.findIndex((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet);
                 if (found >= 0) d.sequenceBindings.splice(found, 1);
                 else d.sequenceBindings.push({ logicalId, sequenceId: seq.id, setId: selectedMacroSet, loop: false, cancelOnRelease: false, transform: "none" });
               })}
-              setBindingMode={(field, value) => update((d) => d.sequenceBindings.filter((b) => b.sequenceId === seq.id && b.setId === selectedMacroSet).forEach((b) => { b[field] = value; }))}
+              setBindingMode={(field, value) => update((d) => d.sequenceBindings.filter((b) => b.sequenceId === seq.id && b.setId === selectedMacroSet && b.logicalId < EDITOR_LOGICAL_BUTTONS.length).forEach((b) => { b[field] = value; }))}
               setBindingTransform={(logicalId, transform) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) binding.transform = transform; })}
               duplicate={duplicateSequence}
               remove={() => { update((d) => { const removedId = d.sequences[selectedSequence].id; d.sequences.splice(selectedSequence, 1); d.sequenceBindings = d.sequenceBindings.filter((binding) => binding.sequenceId !== removedId); }); setSelectedSequence(0); }} /> : <EmptyState label={t("マクロがありません", "No macros yet")} action={t("＋ 最初のマクロを作る", "+ Create the first macro")} onClick={addSequence} />}
@@ -504,7 +504,7 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
       </div>
       <div className="macro-assignment-panel">
         <div className="trigger-heading"><h3>{t("起動ボタン", "Trigger Buttons")}</h3><small>{t("↔ / ↕ で出力方向を反転", "Use ↔ / ↕ to mirror the output")}</small></div>
-        <div className="trigger-buttons">{LOGICAL_BUTTONS.map((button, logicalId) => {
+        <div className="trigger-buttons">{EDITOR_LOGICAL_BUTTONS.map((button, logicalId) => {
           const binding = bindings.find((item) => item.logicalId === logicalId);
           const axes = transformAxes(binding?.transform ?? "none");
           return <div className={binding ? "trigger-card active" : "trigger-card"} key={button}>
@@ -583,8 +583,8 @@ function SelectorEditor({ selector, twoPlayerOutputs, update, remove }: { select
     <div className="editor-panel">
       <div className="editor-titleline"><input className="title-input" aria-label={t("セレクタ名", "Selector name")} value={selector.name} onChange={(e) => update((s) => { s.name = e.target.value; })} /><div className="editor-title-actions"><button onClick={remove}>{t("削除", "Delete")}</button></div></div>
       <div className="control-grid six">
-        <label className="control"><span>{t("増加", "Increment")}</span><select value={selector.increment} onChange={(e) => update((s) => { s.increment = Number(e.target.value); })}>{LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{buttonLabel(b)}</option>)}</select></label>
-        <label className="control"><span>{t("減少", "Decrement")}</span><select value={selector.decrement} onChange={(e) => update((s) => { s.decrement = Number(e.target.value); })}>{LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{buttonLabel(b)}</option>)}</select></label>
+        <label className="control"><span>{t("増加", "Increment")}</span><select value={selector.increment} onChange={(e) => update((s) => { s.increment = Number(e.target.value); })}>{selector.increment >= EDITOR_LOGICAL_BUTTONS.length && <option value={selector.increment}>{t(`ID ${selector.increment}（非表示）`, `ID ${selector.increment} (hidden)`)}</option>}{EDITOR_LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{buttonLabel(b)}</option>)}</select></label>
+        <label className="control"><span>{t("減少", "Decrement")}</span><select value={selector.decrement} onChange={(e) => update((s) => { s.decrement = Number(e.target.value); })}>{selector.decrement >= EDITOR_LOGICAL_BUTTONS.length && <option value={selector.decrement}>{t(`ID ${selector.decrement}（非表示）`, `ID ${selector.decrement} (hidden)`)}</option>}{EDITOR_LOGICAL_BUTTONS.map((b, i) => <option value={i} key={b}>{buttonLabel(b)}</option>)}</select></label>
         <label className="control"><span>{t("最大値", "Maximum")}</span><input type="number" min={selector.min} max={selector.min + 63} value={selector.max} onChange={(e) => setMax(Number(e.target.value))} /></label>
         <label className="control"><span>{t("初期値", "Initial")}</span><input type="number" min={selector.min} max={selector.max} value={selector.initial} onChange={(e) => update((s) => { s.initial = Number(e.target.value); })} /></label>
         <label className="control"><span>{t("端の動作", "At limits")}</span><select value={selector.wrap ? "wrap" : "clamp"} onChange={(e) => update((s) => { s.wrap = e.target.value === "wrap"; })}><option value="clamp">{t("停止", "Stop")}</option><option value="wrap">{t("循環", "Wrap")}</option></select></label>
@@ -603,7 +603,7 @@ function AssignmentOverview({ profile, selectedMacroSet, setSelectedMacroSet }: 
     <section className="workspace overview-workspace">
       <div className="section-heading"><div><h2>{t("割り当て一覧", "Assignment Overview")}</h2></div><MacroSetBar label={t("マクロセット", "Macro Set")} names={profile.macroSets.names} selected={selectedMacroSet} onChange={setSelectedMacroSet} /></div>
       <div className="overview-head"><span>{t("論理ボタン", "Logical button")}</span><span>{t("出力", "Output")}</span><span>{t("連射", "Rapid fire")}</span><span>{t("マクロ", "Macros")}</span><span>{t("セレクタ操作", "Selector control")}</span></div>
-      <div className="overview-list">{LOGICAL_BUTTONS.map((button, logicalId) => {
+      <div className="overview-list">{EDITOR_LOGICAL_BUTTONS.map((button, logicalId) => {
         const macros = profile.sequenceBindings.filter((binding) => binding.logicalId === logicalId && binding.setId === selectedMacroSet).map((binding) => ({ binding, macro: profile.sequences.find((sequence) => sequence.id === binding.sequenceId) })).filter((item) => item.macro);
         const modifiers = profile.selectors.flatMap((selector) => [selector.increment === logicalId ? `${selector.name} ＋` : "", selector.decrement === logicalId ? `${selector.name} −` : ""]).filter(Boolean);
         const rapid = profile.rapidFire[logicalId];
