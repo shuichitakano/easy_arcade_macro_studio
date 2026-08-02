@@ -16,7 +16,7 @@ import { LanguageSwitch, useI18n } from "./i18n";
 type Tab = "mapping" | "macro" | "macrosets" | "selector" | "overview" | "share";
 
 function clone<T>(value: T): T { return structuredClone(value); }
-const DIRECTION_LABELS: Record<string, string> = { UP: "⇧", DOWN: "⇩", LEFT: "⇦", RIGHT: "⇨" };
+const DIRECTION_LABELS: Record<string, string> = { UP: "⬆︎", DOWN: "⬇︎", LEFT: "⬅︎", RIGHT: "➡︎" };
 function buttonLabel(button: string) { return DIRECTION_LABELS[button] ?? button; }
 function outputLabel(index: number, showPlayer = false) {
   const player = index >= PLAYER_OUTPUTS.length ? 2 : 1;
