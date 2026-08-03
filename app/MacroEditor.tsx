@@ -9,7 +9,7 @@ import {
 } from "./profile";
 import { parseProfileJsonText, ProfileJsonError, serializeProfileJson } from "./profileJson";
 import { listStoredProfiles, removeStoredProfile, saveStoredProfile, StoredProfile } from "./profileStore";
-import { deleteTick, insertTick, maskAtTick, setTickMask, totalTicks } from "./sequenceEditing";
+import { copyTickRange, insertTick, insertTickRange, maskAtTick, replaceTickRange, setTickMask, TickClipboard, totalTicks } from "./sequenceEditing";
 import { SharedProfiles } from "./SharedProfiles";
 import { LanguageSwitch, useI18n } from "./i18n";
 import { uniqueDownloadFileName } from "./downloadName";
@@ -70,6 +70,20 @@ function OutputToggles({ mask, onChange, twoPlayerOutputs, allowed = 0xffffff }:
   );
 }
 
+function IntegerInput({ value, min, max, onCommit, ariaLabel }: { value: number; min: number; max: number; onCommit: (value: number) => void; ariaLabel: string }) {
+  const [text, setText] = useState(String(value));
+  function commit() {
+    const parsed = Number(text);
+    const next = text.trim() && Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.trunc(parsed))) : value;
+    setText(String(next));
+    if (next !== value) onCommit(next);
+  }
+  return <input aria-label={ariaLabel} type="number" min={min} max={max} step="1" value={text} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setText(event.target.value)} onBlur={commit} onKeyDown={(event) => {
+    if (event.key === "Enter") event.currentTarget.blur();
+    if (event.key === "Escape") { setText(String(value)); event.currentTarget.blur(); }
+  }} />;
+}
+
 export function MacroEditor() {
   const { locale, t } = useI18n();
   const [profile, setProfile] = useState<Profile>(() => createDefaultProfile());
@@ -78,6 +92,7 @@ export function MacroEditor() {
   const [selectedSequence, setSelectedSequence] = useState(0);
   const [selectedSelector, setSelectedSelector] = useState(0);
   const [selectedMacroSet, setSelectedMacroSet] = useState(0);
+  const [timelineClipboard, setTimelineClipboard] = useState<TickClipboard>([]);
   const [notice, setNotice] = useState(() => t("新しいプロファイルを準備しました", "New profile ready"));
   const [toast, setToast] = useState("");
   const [hydrated, setHydrated] = useState(false);
@@ -430,7 +445,7 @@ export function MacroEditor() {
                 })}
               </div>
             </aside>
-            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet && binding.logicalId < EDITOR_LOGICAL_BUTTONS.length)} updateSequence={(mutator) => update((d) => mutator(d.sequences[selectedSequence]))}
+            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet && binding.logicalId < EDITOR_LOGICAL_BUTTONS.length)} updateSequence={(mutator) => update((d) => mutator(d.sequences[selectedSequence]))} timelineClipboard={timelineClipboard} setTimelineClipboard={setTimelineClipboard}
               toggleTrigger={(logicalId) => update((d) => {
                 const found = d.sequenceBindings.findIndex((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet);
                 if (found >= 0) d.sequenceBindings.splice(found, 1);
@@ -493,12 +508,14 @@ function MacroSetEditor({ profile, update, add, remove }: { profile: Profile; up
   );
 }
 
-function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updateSequence, toggleTrigger, setBindingMode, setBindingTransform, duplicate, remove }: {
+function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updateSequence, timelineClipboard, setTimelineClipboard, toggleTrigger, setBindingMode, setBindingTransform, duplicate, remove }: {
   sequence: MacroSequence;
   frameStep: number;
   twoPlayerOutputs: boolean;
   bindings: SequenceBinding[];
   updateSequence: (fn: (s: MacroSequence) => void) => void;
+  timelineClipboard: TickClipboard;
+  setTimelineClipboard: (value: TickClipboard) => void;
   toggleTrigger: (logicalId: number) => void;
   setBindingMode: (field: "loop" | "cancelOnRelease", value: boolean) => void;
   setBindingTransform: (logicalId: number, transform: OutputTransform) => void;
@@ -534,7 +551,7 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
       <div className="behavior-strip macro-behavior">
         <label className="control"><span>{t("再生", "Playback")}</span><select disabled={!bindings.length} value={loopValue} onChange={(e) => setBindingMode("loop", e.target.value === "loop")}><option value="once">{t("1回再生", "Play once")}</option><option value="loop">{t("押している間反復", "Repeat while held")}</option>{loopValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
         <label className="control"><span>{t("離したとき", "On release")}</span><select disabled={!bindings.length} value={releaseValue} onChange={(e) => setBindingMode("cancelOnRelease", e.target.value === "cancel")}><option value="complete">{t("現在の再生を完了", "Finish playback")}</option><option value="cancel">{t("すぐに中断", "Stop immediately")}</option>{releaseValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
-        <label className="control"><span>{t("ループ開始", "Loop start")}</span><select value={sequence.loopStart} onChange={(e) => updateSequence((s) => { s.loopStart = Number(e.target.value); })}>{sequence.steps.map((_, i) => <option value={i} key={i}>{i + 1}</option>)}</select></label>
+        <label className="control loop-start-control"><span>{t("ループ開始ステップ", "Loop start step")}</span><IntegerInput key={`loop-${sequence.loopStart}-${sequence.steps.length}`} ariaLabel={t("ループ開始ステップ", "Loop start step")} value={sequence.loopStart + 1} min={1} max={sequence.steps.length} onCommit={(value) => updateSequence((s) => { s.loopStart = value - 1; })} /></label>
       </div>
       <div className="sequence-summary" aria-label={t("シーケンス", "Sequence")}>{sequence.steps.map((step, index) => <div className="sequence-summary-item" key={index}><span className="sequence-command">{commandLabel(step.mask, twoPlayerOutputs)}</span>{step.frames > 1 && <small>×{step.frames}</small>}{index < sequence.steps.length - 1 && <b aria-hidden="true">›</b>}</div>)}</div>
       <div className="editor-toolbar"><span>{sequence.steps.length} {t("ステップ", "steps")} · {total} tick · {total * frameStep} {t("フレーム", "frames")}</span><div className="editor-mode"><button className={editorMode === "steps" ? "active" : ""} onClick={() => setEditorMode("steps")}>{t("ステップ", "Steps")}</button><button className={editorMode === "grid" ? "active" : ""} onClick={() => setEditorMode("grid")}>{t("タイムライン", "Timeline")}</button></div></div>
@@ -545,43 +562,120 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
             <article className="step-row">
               <div className="step-index">{index + 1}</div>
               <div className="step-output"><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={step.mask} onChange={(mask) => updateSequence((s) => { s.steps[index].mask = mask; })} /></div>
-              <div className="duration"><input aria-label={t(`ステップ${index + 1}のtick数`, `Ticks in step ${index + 1}`)} type="number" min="1" max="65535" value={step.frames} onChange={(e) => updateSequence((s) => { s.steps[index].frames = Math.max(1, Math.min(65535, Number(e.target.value))); })} /></div>
+              <div className="duration"><IntegerInput key={step.frames} ariaLabel={t(`ステップ${index + 1}のtick数`, `Ticks in step ${index + 1}`)} value={step.frames} min={1} max={65535} onCommit={(value) => updateSequence((s) => { s.steps[index].frames = value; })} /></div>
               <button className="remove-step" disabled={sequence.steps.length === 1} onClick={() => updateSequence((s) => { const oldLoop = s.loopStart; s.steps.splice(index, 1); s.loopStart = oldLoop > index ? oldLoop - 1 : oldLoop === index ? Math.min(index, s.steps.length - 1) : oldLoop; })}>×</button>
             </article>
           </div>
         ))}
-      </div><button className="add-row" disabled={sequence.steps.length >= 255} onClick={() => updateSequence((s) => { s.steps.push({ mask: 0, frames: 1 }); })}>＋ {t("末尾にステップを追加", "Add step at end")}</button></> : <TimelineEditor sequence={sequence} twoPlayerOutputs={twoPlayerOutputs} updateSequence={updateSequence} />}
+      </div><button className="add-row" disabled={sequence.steps.length >= 255} onClick={() => updateSequence((s) => { s.steps.push({ mask: 0, frames: 1 }); })}>＋ {t("末尾にステップを追加", "Add step at end")}</button></> : <TimelineEditor sequence={sequence} twoPlayerOutputs={twoPlayerOutputs} updateSequence={updateSequence} clipboard={timelineClipboard} setClipboard={setTimelineClipboard} />}
     </div>
   );
 }
 
-function TimelineEditor({ sequence, twoPlayerOutputs, updateSequence }: { sequence: MacroSequence; twoPlayerOutputs: boolean; updateSequence: (fn: (s: MacroSequence) => void) => void }) {
+function TimelineEditor({ sequence, twoPlayerOutputs, updateSequence, clipboard, setClipboard }: { sequence: MacroSequence; twoPlayerOutputs: boolean; updateSequence: (fn: (s: MacroSequence) => void) => void; clipboard: TickClipboard; setClipboard: (value: TickClipboard) => void }) {
   const { t } = useI18n();
   const PAGE_SIZE = 64;
   const [page, setPage] = useState(0);
-  const [selectedTick, setSelectedTick] = useState(0);
+  const [selection, setSelection] = useState({ anchor: 0, focus: 0 });
+  const [editStatus, setEditStatus] = useState("");
+  const [canUndo, setCanUndo] = useState(false);
+  const undoStack = useRef<MacroSequence[]>([]);
+  const editorRef = useRef<HTMLDivElement>(null);
   const total = totalTicks(sequence);
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
   const safePage = Math.min(page, maxPage);
   const start = safePage * PAGE_SIZE;
   const count = Math.min(PAGE_SIZE, total - start);
   const ticks = Array.from({ length: count }, (_, index) => start + index);
-  const selected = Math.min(selectedTick, total - 1);
-  function goToPage(next: number) { const value = Math.max(0, Math.min(maxPage, next)); setPage(value); setSelectedTick(value * PAGE_SIZE); }
+  const selected = Math.min(selection.focus, total - 1);
+  const rangeStart = Math.max(0, Math.min(selection.anchor, selected));
+  const rangeEnd = Math.max(selection.anchor, selected);
+  const selectedCount = rangeEnd - rangeStart + 1;
+  const clipboardTicks = clipboard.reduce((sum, step) => sum + step.frames, 0);
+
+  function selectTick(tick: number, extend = false) {
+    setSelection((current) => ({ anchor: extend ? Math.min(current.anchor, total - 1) : tick, focus: tick }));
+  }
+  function goToPage(next: number) { setPage(Math.max(0, Math.min(maxPage, next))); }
+  function edit(mutator: (s: MacroSequence) => void) {
+    undoStack.current = [...undoStack.current.slice(-99), clone(sequence)];
+    setCanUndo(true);
+    updateSequence(mutator);
+  }
+  function copySelection() {
+    setClipboard(copyTickRange(sequence, rangeStart, rangeEnd));
+    setEditStatus(t(`${selectedCount} tickをコピーしました`, `Copied ${selectedCount} ${selectedCount === 1 ? "tick" : "ticks"}`));
+  }
+  function deleteSelection() {
+    edit((s) => replaceTickRange(s, rangeStart, rangeEnd, []));
+    const next = Math.min(rangeStart, total - selectedCount - 1);
+    setSelection({ anchor: Math.max(0, next), focus: Math.max(0, next) });
+    setEditStatus(t(`${selectedCount} tickを削除しました`, `Deleted ${selectedCount} ${selectedCount === 1 ? "tick" : "ticks"}`));
+  }
+  function cutSelection() {
+    setClipboard(copyTickRange(sequence, rangeStart, rangeEnd));
+    edit((s) => replaceTickRange(s, rangeStart, rangeEnd, []));
+    const next = Math.max(0, Math.min(rangeStart, total - selectedCount - 1));
+    setSelection({ anchor: next, focus: next });
+    setEditStatus(t(`${selectedCount} tickをカットしました`, `Cut ${selectedCount} ${selectedCount === 1 ? "tick" : "ticks"}`));
+  }
+  function pasteSelection() {
+    if (!clipboardTicks) return;
+    edit((s) => insertTickRange(s, rangeStart, clipboard));
+    const end = rangeStart + clipboardTicks - 1;
+    setSelection({ anchor: rangeStart, focus: end });
+    setPage(Math.floor(rangeStart / PAGE_SIZE));
+    setEditStatus(t(`${clipboardTicks} tickを選択位置へ挿入しました`, `Inserted ${clipboardTicks} ${clipboardTicks === 1 ? "tick" : "ticks"} at the selection`));
+  }
+  function undo() {
+    const previous = undoStack.current.at(-1);
+    if (!previous) return;
+    undoStack.current = undoStack.current.slice(0, -1);
+    setCanUndo(undoStack.current.length > 0);
+    updateSequence((s) => Object.assign(s, clone(previous)));
+    const tick = Math.min(rangeStart, totalTicks(previous) - 1);
+    setSelection({ anchor: tick, focus: tick });
+    setPage(Math.floor(tick / PAGE_SIZE));
+    setEditStatus(t("直前の編集を元に戻しました", "Undid the last edit"));
+  }
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (!editorRef.current?.contains(document.activeElement) || target?.matches("input, textarea, select, [contenteditable='true']")) return;
+      const command = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (command && key === "c") copySelection();
+      else if (command && key === "x") cutSelection();
+      else if (command && key === "v") pasteSelection();
+      else if (command && key === "z" && !event.shiftKey) undo();
+      else if (command && key === "a") { setSelection({ anchor: 0, focus: total - 1 }); setPage(0); }
+      else if (event.key === "Delete" || event.key === "Backspace") deleteSelection();
+      else return;
+      event.preventDefault();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  });
+
   return (
-    <div className="piano-editor">
+    <div className="piano-editor" ref={editorRef}>
       <div className={maxPage > 0 ? "piano-toolbar" : "piano-toolbar single-page"}>
         {maxPage > 0 && <div><button disabled={safePage === 0} onClick={() => goToPage(safePage - 1)}>←</button><strong>{start + 1}–{start + count}</strong><button disabled={safePage === maxPage} onClick={() => goToPage(safePage + 1)}>→</button><span>{safePage + 1} / {maxPage + 1}</span></div>}
-        <div className="frame-tools"><span>tick {selected + 1}</span><button onClick={() => { updateSequence((s) => insertTick(s, selected)); setSelectedTick(selected); }}>{t("前に追加", "Add before")}</button><button onClick={() => { updateSequence((s) => insertTick(s, selected + 1)); setSelectedTick(selected + 1); }}>{t("後に追加", "Add after")}</button><button className="danger" disabled={total <= 1} onClick={() => { updateSequence((s) => deleteTick(s, selected)); setSelectedTick(Math.max(0, selected - 1)); }}>{t("削除", "Delete")}</button></div>
+        <div className="frame-tools"><span>{rangeStart === rangeEnd ? `tick ${rangeStart + 1}` : `tick ${rangeStart + 1}–${rangeEnd + 1} (${selectedCount})`}</span><button onClick={() => { edit((s) => insertTick(s, rangeStart)); setSelection({ anchor: rangeStart, focus: rangeStart }); }}>{t("前に追加", "Add before")}</button><button onClick={() => { edit((s) => insertTick(s, rangeEnd + 1)); const tick = rangeEnd + 1; setSelection({ anchor: tick, focus: tick }); }}>{t("後に追加", "Add after")}</button></div>
+      </div>
+      <div className="piano-editbar">
+        <span>{t("クリックで選択、Shift＋クリックで範囲選択", "Click to select; Shift-click to select a range")}</span>
+        <div><button disabled={!canUndo} onClick={undo} title={t("元に戻す (⌘/Ctrl+Z)", "Undo (⌘/Ctrl+Z)")}>{t("元に戻す", "Undo")}</button><button onClick={copySelection} title={t("コピー (⌘/Ctrl+C)", "Copy (⌘/Ctrl+C)")}>{t("コピー", "Copy")}</button><button onClick={cutSelection} title={t("カット (⌘/Ctrl+X)", "Cut (⌘/Ctrl+X)")}>{t("カット", "Cut")}</button><button disabled={!clipboardTicks} onClick={pasteSelection} title={t("選択範囲の先頭へ挿入 (⌘/Ctrl+V)", "Insert at selection start (⌘/Ctrl+V)")}>{t("ペースト", "Paste")}</button><button className="danger" disabled={total <= 1 && selectedCount === 1} onClick={deleteSelection} title={t("削除 (Delete)", "Delete (Delete)")}>{t("削除", "Delete")}</button></div>
       </div>
       <div className="piano-scroll">
         <div className="piano-grid" style={{ gridTemplateColumns: `76px repeat(${count}, 27px)` }}>
           <div className="piano-corner">{t("出力", "Output")}</div>
-          {ticks.map((tick) => <button key={`h${tick}`} className={selected === tick ? "frame-head selected" : "frame-head"} onClick={() => setSelectedTick(tick)}>{tick + 1}</button>)}
-          {OUTPUTS.slice(0, twoPlayerOutputs ? 24 : 12).map((output, outputIndex) => <div className="piano-row" key={output} style={{ display: "contents" }}><div className="piano-label">{outputLabel(outputIndex, twoPlayerOutputs)}</div>{ticks.map((tick) => { const active = !!(maskAtTick(sequence, tick) & (1 << outputIndex)); return <button aria-label={t(`${tick + 1} tickの${output}`, `${output} at tick ${tick + 1}`)} key={`${output}-${tick}`} className={`${active ? "note active" : "note"}${selected === tick ? " selected" : ""}`} onClick={() => { setSelectedTick(tick); updateSequence((s) => setTickMask(s, tick, maskAtTick(s, tick) ^ (1 << outputIndex))); }}><i /></button>; })}</div>)}
+          {ticks.map((tick) => { const inRange = tick >= rangeStart && tick <= rangeEnd; return <button key={`h${tick}`} aria-pressed={inRange} className={inRange ? "frame-head selected" : "frame-head"} onClick={(event) => selectTick(tick, event.shiftKey)}>{tick + 1}</button>; })}
+          {OUTPUTS.slice(0, twoPlayerOutputs ? 24 : 12).map((output, outputIndex) => <div className="piano-row" key={output} style={{ display: "contents" }}><div className="piano-label">{outputLabel(outputIndex, twoPlayerOutputs)}</div>{ticks.map((tick) => { const active = !!(maskAtTick(sequence, tick) & (1 << outputIndex)); const inRange = tick >= rangeStart && tick <= rangeEnd; return <button aria-label={t(`${tick + 1} tickの${output}`, `${output} at tick ${tick + 1}`)} key={`${output}-${tick}`} className={`${active ? "note active" : "note"}${inRange ? " selected" : ""}`} onClick={(event) => { selectTick(tick, event.shiftKey); if (!event.shiftKey) edit((s) => setTickMask(s, tick, maskAtTick(s, tick) ^ (1 << outputIndex))); }}><i /></button>; })}</div>)}
         </div>
       </div>
-      <div className="piano-footer"><button onClick={() => { updateSequence((s) => insertTick(s, total)); setSelectedTick(total); setPage(Math.floor(total / PAGE_SIZE)); }}>{t("末尾に追加", "Add at end")}</button></div>
+      <div className="piano-footer"><span aria-live="polite">{editStatus}</span><button onClick={() => { edit((s) => insertTick(s, total)); setSelection({ anchor: total, focus: total }); setPage(Math.floor(total / PAGE_SIZE)); }}>{t("末尾に追加", "Add at end")}</button></div>
     </div>
   );
 }

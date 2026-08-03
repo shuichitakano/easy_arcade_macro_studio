@@ -136,6 +136,7 @@ button { cursor: pointer; }
 .rapid-options { min-width: 0; flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .control > span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; font-weight: 500; }
 .rapid-options select, .rapid-divisor, .control select, .control input { width: 100%; height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); font-size: 12px; }
+.control.loop-start-control input { width: 88px; }
 .rapid-options select:focus, .rapid-divisor:focus-within, .control select:focus, .control input:focus { border-color: #93c5fd; outline: 2px solid #dbeafe; }
 .rapid-options select:disabled, .rapid-divisor:has(input:disabled) { opacity: .45; }
 .rapid-divisor { display: flex; align-items: center; gap: 2px; color: var(--muted); }
@@ -174,7 +175,7 @@ button { cursor: pointer; }
 .flip-flags button.active { background: #dbeafe; color: var(--accent); }
 
 .behavior-strip, .control-grid { padding: 14px 20px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); background: #fafafa; }
-.behavior-strip.macro-behavior { grid-template-columns: repeat(3, minmax(140px, 220px)); justify-content: end; }
+.behavior-strip.macro-behavior { grid-template-columns: repeat(3, minmax(140px, 220px)); justify-content: start; }
 .control-grid.six { grid-template-columns: repeat(6, 1fr); }
 
 .editor-toolbar { min-height: 54px; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); }
@@ -215,6 +216,13 @@ button { cursor: pointer; }
 .piano-toolbar button:disabled { cursor: not-allowed; opacity: .35; }
 .piano-toolbar button.danger { color: var(--danger); }
 .piano-toolbar strong, .piano-toolbar span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.piano-editbar { min-height: 40px; padding: 5px 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); background: #fff; }
+.piano-editbar > span { color: var(--muted); font-size: 10px; }
+.piano-editbar > div { display: flex; align-items: center; gap: 5px; }
+.piano-editbar button { height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 11px; }
+.piano-editbar button:hover:not(:disabled) { background: var(--subtle); }
+.piano-editbar button:disabled { cursor: not-allowed; opacity: .35; }
+.piano-editbar button.danger { color: var(--danger); }
 .piano-scroll { overflow-x: auto; }
 .piano-grid { width: max-content; min-width: 100%; display: grid; }
 .piano-corner, .frame-head, .piano-label, .note { height: 28px; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -228,7 +236,8 @@ button { cursor: pointer; }
 .note:hover i { border-color: #93c5fd; }
 .note.active { background: var(--accent-soft); }
 .note.active i { border-color: var(--accent); background: var(--accent); }
-.piano-footer { min-height: 42px; padding: 6px 8px; display: flex; justify-content: flex-end; border-top: 1px solid var(--line); background: #fafafa; }
+.piano-footer { min-height: 42px; padding: 6px 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); background: #fafafa; }
+.piano-footer > span { color: var(--muted); font-size: 10px; }
 
 .state-table-head, .state-row { display: grid; grid-template-columns: 64px minmax(96px, 140px) 1fr; align-items: center; gap: 16px; }
 .state-table-head { min-height: 34px; padding: 0 20px; border-bottom: 1px solid var(--line); background: #fafafa; color: var(--muted); font-size: 11px; font-weight: 600; }
@@ -367,6 +376,7 @@ a.share-account:hover { color: var(--accent); }
   .editor-toolbar { align-items: flex-start; flex-direction: column; }
   .piano-editor { margin-inline: 8px; }
   .piano-toolbar { align-items: flex-start; flex-direction: column; }
+  .piano-editbar { align-items: flex-start; flex-direction: column; }
   .insert-step { opacity: 1; }
   .steps-list { overflow-x: auto; }
   .share-heading { padding: 20px 16px; align-items: flex-start; flex-direction: column; }
