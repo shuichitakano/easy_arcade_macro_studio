@@ -4,7 +4,7 @@ import type { MacroSequence } from "../app/profile";
 import { copyTickRange, insertTickRange, maskAtTick, replaceTickRange, totalTicks } from "../app/sequenceEditing";
 
 function sequence(steps: MacroSequence["steps"], loopStart = 0): MacroSequence {
-  return { id: 1, name: "Test", loopStart, steps };
+  return { id: 1, name: "Test", loopStart, composition: "or", suppressionMask: 0, steps };
 }
 
 function masks(value: MacroSequence) {

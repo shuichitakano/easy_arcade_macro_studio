@@ -11,8 +11,9 @@ function sampleProfile() {
   profile.description = "Profile JSON test";
   profile.frameStep = 2;
   profile.macroSets.names = ["Ryu", "Ken"];
-  profile.sequences = [{ id: 3, name: "Hadoken", loopStart: 0, steps: [{ mask: (1 << 3), frames: 1 }, { mask: (1 << 3) | (1 << 5), frames: 2 }, { mask: (1 << 5) | (1 << 6), frames: 1 }] }];
-  profile.sequenceBindings = [{ logicalId: 12, sequenceId: 3, setId: 0, loop: false, loopSync: false, cancelOnRelease: false, transform: "none", composition: "autoLever", suppressionMask: automaticSuppressionMask(profile.sequences[0]) }];
+  profile.sequences = [{ id: 3, name: "Hadoken", loopStart: 0, composition: "autoLever", suppressionMask: 0, steps: [{ mask: (1 << 3), frames: 1 }, { mask: (1 << 3) | (1 << 5), frames: 2 }, { mask: (1 << 5) | (1 << 6), frames: 1 }] }];
+  profile.sequences[0].suppressionMask = automaticSuppressionMask(profile.sequences[0]);
+  profile.sequenceBindings = [{ logicalId: 12, sequenceId: 3, setId: 0, loop: false, loopSync: false, cancelOnRelease: false, transform: "none" }];
   profile.selectors = [{ id: 1, name: "GEAR", increment: 13, decrement: 14, min: 0, max: 1, initial: 0, wrap: true, neutralFrames: 1, occupancyMask: 1 << 6, outputs: [0, 1 << 6], stateNames: ["LOW", "HIGH"] }];
   profile.metadata = { generator: "test", sources: ["https://example.com/moves"], verification: "editor-validated", extra: { z: 1, a: 2 } };
   return profile;
@@ -66,7 +67,7 @@ function asPrototype16Bit(bytes: Uint8Array) {
       let position = 1;
       for (let definition = 0; definition < source[0]; definition++) {
         const count = source[position + 1];
-        converted.push(...source.subarray(position, position + 4)); position += 4;
+        converted.push(...source.subarray(position, position + 8)); position += 8;
         for (let step = 0; step < count; step++, position += 5) converted.push(source[position], source[position + 1], source[position + 3], source[position + 4]);
       }
     } else if (type === 0x04) {
@@ -100,7 +101,18 @@ function asPreCompositionBinary(bytes: Uint8Array) {
     if (type === 0x02) {
       converted.push(source[0], source[1]);
       const count = source[0] | (source[1] << 8);
-      for (let index = 0; index < count; index++) converted.push(...source.subarray(2 + index * 8, 2 + index * 8 + 4));
+      for (let index = 0; index < count; index++) {
+        const position = 2 + index * 4;
+        converted.push(source[position], source[position + 1], source[position + 2], source[position + 3] & ~16);
+      }
+    } else if (type === 0x03) {
+      converted.push(source[0]);
+      let position = 1;
+      for (let definition = 0; definition < source[0]; definition++) {
+        const count = source[position + 1];
+        converted.push(source[position], count, source[position + 2], 0); position += 8;
+        converted.push(...source.subarray(position, position + count * 5)); position += count * 5;
+      }
     } else if (type === 0x04) {
       converted.push(source[0]);
       let position = 1;
@@ -108,6 +120,52 @@ function asPreCompositionBinary(bytes: Uint8Array) {
         const count = source[position + 8];
         converted.push(...source.subarray(position, position + 10)); position += 13;
         converted.push(...source.subarray(position, position + count * 3)); position += count * 3;
+      }
+    } else converted.push(...source);
+    payload.push(type, 0, converted.length & 0xff, converted.length >>> 8, ...converted);
+    cursor += 4 + length;
+  }
+  const legacy = new Uint8Array(16 + payload.length);
+  legacy.set(bytes.subarray(0, 16)); legacy.set(payload, 16);
+  const view = new DataView(legacy.buffer);
+  view.setUint32(8, legacy.length, true);
+  view.setUint32(12, crc32(legacy.subarray(16)), true);
+  return legacy;
+}
+
+function asBindingCompositionBinary(bytes: Uint8Array) {
+  const sourceView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const payload: number[] = [];
+  let composition = 0, suppressionMask = 0;
+  for (let cursor = 16; cursor < bytes.length;) {
+    const type = bytes[cursor], length = sourceView.getUint16(cursor + 2, true);
+    if (type === 0x03 && bytes[cursor + 4] > 0) {
+      composition = bytes[cursor + 8];
+      suppressionMask = bytes[cursor + 9] | (bytes[cursor + 10] << 8) | (bytes[cursor + 11] << 16);
+      break;
+    }
+    cursor += 4 + length;
+  }
+  for (let cursor = 16; cursor < bytes.length;) {
+    const type = bytes[cursor], length = sourceView.getUint16(cursor + 2, true);
+    const source = bytes.subarray(cursor + 4, cursor + 4 + length);
+    const converted: number[] = [];
+    if (type === 0x03) {
+      converted.push(source[0]);
+      let position = 1;
+      for (let definition = 0; definition < source[0]; definition++) {
+        const count = source[position + 1];
+        composition = source[position + 3];
+        suppressionMask = source[position + 4] | (source[position + 5] << 8) | (source[position + 6] << 16);
+        converted.push(source[position], count, source[position + 2], 0); position += 8;
+        converted.push(...source.subarray(position, position + count * 5)); position += count * 5;
+      }
+    } else if (type === 0x02) {
+      converted.push(source[0], source[1]);
+      const count = source[0] | (source[1] << 8);
+      for (let index = 0; index < count; index++) {
+        const position = 2 + index * 4;
+        converted.push(...source.subarray(position, position + 4), composition, suppressionMask & 0xff, (suppressionMask >>> 8) & 0xff, (suppressionMask >>> 16) & 0xff);
       }
     } else converted.push(...source);
     payload.push(type, 0, converted.length & 0xff, converted.length >>> 8, ...converted);
@@ -132,11 +190,15 @@ test("Profile JSON round-trips every executable setting", () => {
 
 test("legacy Profile JSON defaults to OR composition without occupancy", () => {
   const json = toProfileJson(sampleProfile());
+  const sequence = json.sequences[0] as unknown as Record<string, unknown>;
   const binding = json.bindings[0] as unknown as Record<string, unknown>;
-  delete binding.loopSync; delete binding.composition; delete binding.suppressedOutputs;
+  binding.composition = sequence.composition; binding.suppressedOutputs = sequence.suppressedOutputs;
+  delete sequence.composition; delete sequence.suppressedOutputs; delete binding.loopSync;
   delete (json.selectors[0] as unknown as Record<string, unknown>).occupiedOutputs;
   const parsed = parseProfileJsonText(JSON.stringify(json));
-  assert.deepEqual(parsed.sequenceBindings[0], { logicalId: 12, sequenceId: 3, setId: 0, loop: false, loopSync: false, cancelOnRelease: false, transform: "none", composition: "or", suppressionMask: 0 });
+  assert.equal(parsed.sequences[0].composition, "autoLever");
+  assert.equal(parsed.sequences[0].suppressionMask, automaticSuppressionMask(parsed.sequences[0]));
+  assert.deepEqual(parsed.sequenceBindings[0], { logicalId: 12, sequenceId: 3, setId: 0, loop: false, loopSync: false, cancelOnRelease: false, transform: "none" });
   assert.equal(parsed.selectors[0].occupancyMask, 0);
 });
 
@@ -144,8 +206,8 @@ test("Loop Sync and masks round-trip through the binary format", () => {
   const source = sampleProfile();
   source.sequenceBindings[0].loop = true;
   source.sequenceBindings[0].loopSync = true;
-  source.sequenceBindings[0].composition = "custom";
-  source.sequenceBindings[0].suppressionMask = (1 << 2) | (1 << 6);
+  source.sequences[0].composition = "custom";
+  source.sequences[0].suppressionMask = (1 << 2) | (1 << 6);
   source.selectors[0].occupancyMask = (1 << 7) | (1 << 8);
   const bytes = compileProfile(source);
   assert.equal(bytes[5], 1);
@@ -154,8 +216,8 @@ test("Loop Sync and masks round-trip through the binary format", () => {
 
 test("v1.0 export remains available for compatible profiles", () => {
   const source = sampleProfile();
-  source.sequenceBindings[0].composition = "or";
-  source.sequenceBindings[0].suppressionMask = 0;
+  source.sequences[0].composition = "or";
+  source.sequences[0].suppressionMask = 0;
   source.selectors[0].occupancyMask = 0;
   const bytes = compileProfile(source, "1.0");
   assert.equal(bytes[5], 0);
@@ -165,7 +227,7 @@ test("v1.0 export remains available for compatible profiles", () => {
 test("v1.0 export never drops new behavior silently", () => {
   const source = sampleProfile();
   assert.throws(() => compileProfile(source, "1.0"), /入力抑制/);
-  source.sequenceBindings[0].composition = "or"; source.sequenceBindings[0].suppressionMask = 0; source.sequenceBindings[0].loop = true; source.sequenceBindings[0].loopSync = true;
+  source.sequences[0].composition = "or"; source.sequences[0].suppressionMask = 0; source.sequenceBindings[0].loop = true; source.sequenceBindings[0].loopSync = true;
   assert.throws(() => compileProfile(source, "1.0"), /ループ同期/);
   source.sequenceBindings[0].loopSync = false; source.selectors[0].occupancyMask = 1;
   assert.throws(() => compileProfile(source, "1.0"), /占有マスク/);
@@ -175,9 +237,15 @@ test("pre-composition binary records migrate safely", () => {
   const source = sampleProfile();
   const restored = parseProfile(asPreCompositionBinary(compileProfile(source)));
   const expected = withoutMetadata(source);
-  expected.sequenceBindings[0] = { ...expected.sequenceBindings[0], loopSync: false, composition: "or", suppressionMask: 0 };
+  expected.sequenceBindings[0] = { ...expected.sequenceBindings[0], loopSync: false };
+  expected.sequences[0] = { ...expected.sequences[0], composition: "or", suppressionMask: 0 };
   expected.selectors[0].occupancyMask = 0;
   assert.deepEqual(restored, expected);
+});
+
+test("early v1.1 binding-level composition migrates to the sequence", () => {
+  const source = sampleProfile();
+  assert.deepEqual(parseProfile(asBindingCompositionBinary(compileProfile(source))), withoutMetadata(source));
 });
 
 test("Loop Sync requires a full sequence loop", () => {
@@ -265,7 +333,7 @@ test("2P outputs round-trip through Profile JSON and 24-bit .eamacro masks", () 
   source.twoPlayerOutputs = true;
   source.mappings[12] = (1 << 6) | (1 << 18);
   source.sequences[0].steps[0].mask = (1 << 3) | (1 << 4) | (1 << 6) | (1 << 17) | (1 << 18);
-  source.sequenceBindings[0].suppressionMask = automaticSuppressionMask(source.sequences[0]);
+  source.sequences[0].suppressionMask = automaticSuppressionMask(source.sequences[0]);
   source.selectors[0].outputs[1] = (1 << 6) | (1 << 18);
 
   const json = serializeProfileJson(source);

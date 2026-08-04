@@ -268,7 +268,7 @@ export function MacroEditor() {
     if (profile.sequences.length >= 64) return;
     const used = new Set(profile.sequences.map((s) => s.id));
     let id = 0; while (used.has(id)) id++;
-    update((draft) => draft.sequences.push({ id, name: `Macro ${id + 1}`, loopStart: 0, steps: [{ mask: 0, frames: 1 }] }));
+    update((draft) => draft.sequences.push({ id, name: `Macro ${id + 1}`, loopStart: 0, composition: "autoLever", suppressionMask: 0, steps: [{ mask: 0, frames: 1 }] }));
     setSelectedSequence(profile.sequences.length); setNotice(t("新しいマクロを追加しました", "Added a new macro"));
   }
 
@@ -398,7 +398,7 @@ export function MacroEditor() {
             if (!event.target.checked) {
               draft.mappings = draft.mappings.map((mask) => mask & 0x0fff);
               draft.sequences.forEach((sequence) => sequence.steps.forEach((step) => { step.mask &= 0x0fff; }));
-              draft.sequenceBindings.forEach((binding) => { binding.suppressionMask &= 0x0fff; });
+              draft.sequences.forEach((sequence) => { sequence.suppressionMask &= 0x0fff; });
               draft.selectors.forEach((item) => { item.occupancyMask &= 0x0fff; item.outputs = item.outputs.map((mask) => mask & 0x0fff); });
             }
           })} /><span>2P</span></label>
@@ -450,18 +450,18 @@ export function MacroEditor() {
             </aside>
             {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet && binding.logicalId < EDITOR_LOGICAL_BUTTONS.length)} updateSequence={(mutator) => update((d) => {
               const edited = d.sequences[selectedSequence]; mutator(edited);
-              d.sequenceBindings.filter((binding) => binding.sequenceId === edited.id && binding.composition === "autoLever").forEach((binding) => { binding.suppressionMask = automaticSuppressionMask(edited); });
+              if (edited.composition === "autoLever") edited.suppressionMask = automaticSuppressionMask(edited);
             })} timelineClipboard={timelineClipboard} setTimelineClipboard={setTimelineClipboard}
               toggleTrigger={(logicalId) => update((d) => {
                 const found = d.sequenceBindings.findIndex((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet);
                 if (found >= 0) d.sequenceBindings.splice(found, 1);
-                else d.sequenceBindings.push({ logicalId, sequenceId: seq.id, setId: selectedMacroSet, loop: false, loopSync: false, cancelOnRelease: false, transform: "none", composition: "autoLever", suppressionMask: automaticSuppressionMask(seq) });
+                else d.sequenceBindings.push({ logicalId, sequenceId: seq.id, setId: selectedMacroSet, loop: false, loopSync: false, cancelOnRelease: false, transform: "none" });
               })}
               setBindingMode={(field, value) => update((d) => d.sequenceBindings.filter((b) => b.sequenceId === seq.id && b.setId === selectedMacroSet && b.logicalId < EDITOR_LOGICAL_BUTTONS.length).forEach((b) => { b[field] = value; if (field === "loop" && !value) b.loopSync = false; }))}
               setBindingTransform={(logicalId, transform) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) binding.transform = transform; })}
-              setBindingComposition={(logicalId, composition) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) { binding.composition = composition; binding.suppressionMask = composition === "or" ? 0 : composition === "autoLever" ? automaticSuppressionMask(seq) : binding.suppressionMask || automaticSuppressionMask(seq); } })}
-              setBindingSuppressionMask={(logicalId, suppressionMask) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) binding.suppressionMask = suppressionMask; })}
-              setBindingLoopSync={(logicalId, loopSync) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) { binding.loopSync = loopSync; if (loopSync) { binding.loop = true; d.sequences[selectedSequence].loopStart = 0; } } })}
+              setComposition={(composition) => update((d) => { const edited = d.sequences[selectedSequence]; const customMask = edited.suppressionMask || automaticSuppressionMask(edited); edited.composition = composition; edited.suppressionMask = composition === "or" ? 0 : composition === "autoLever" ? automaticSuppressionMask(edited) : customMask; })}
+              setSuppressionMask={(suppressionMask) => update((d) => { d.sequences[selectedSequence].suppressionMask = suppressionMask; })}
+              setLoopSync={(loopSync) => update((d) => { d.sequenceBindings.filter((b) => b.sequenceId === seq.id && b.setId === selectedMacroSet && b.logicalId < EDITOR_LOGICAL_BUTTONS.length).forEach((binding) => { binding.loopSync = loopSync; if (loopSync) binding.loop = true; }); if (loopSync) d.sequences[selectedSequence].loopStart = 0; })}
               duplicate={duplicateSequence}
               remove={() => { update((d) => { const removedId = d.sequences[selectedSequence].id; d.sequences.splice(selectedSequence, 1); d.sequenceBindings = d.sequenceBindings.filter((binding) => binding.sequenceId !== removedId); }); setSelectedSequence(0); }} /> : <EmptyState label={t("マクロがありません", "No macros yet")} action={t("＋ 最初のマクロを作る", "+ Create the first macro")} onClick={addSequence} />}
           </div>
@@ -517,7 +517,7 @@ function MacroSetEditor({ profile, update, add, remove }: { profile: Profile; up
   );
 }
 
-function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updateSequence, timelineClipboard, setTimelineClipboard, toggleTrigger, setBindingMode, setBindingTransform, setBindingComposition, setBindingSuppressionMask, setBindingLoopSync, duplicate, remove }: {
+function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updateSequence, timelineClipboard, setTimelineClipboard, toggleTrigger, setBindingMode, setBindingTransform, setComposition, setSuppressionMask, setLoopSync, duplicate, remove }: {
   sequence: MacroSequence;
   frameStep: number;
   twoPlayerOutputs: boolean;
@@ -528,19 +528,18 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
   toggleTrigger: (logicalId: number) => void;
   setBindingMode: (field: "loop" | "cancelOnRelease", value: boolean) => void;
   setBindingTransform: (logicalId: number, transform: OutputTransform) => void;
-  setBindingComposition: (logicalId: number, composition: CompositionMode) => void;
-  setBindingSuppressionMask: (logicalId: number, suppressionMask: number) => void;
-  setBindingLoopSync: (logicalId: number, loopSync: boolean) => void;
+  setComposition: (composition: CompositionMode) => void;
+  setSuppressionMask: (suppressionMask: number) => void;
+  setLoopSync: (loopSync: boolean) => void;
   duplicate: () => void;
   remove: () => void;
 }) {
   const { t } = useI18n();
   const [editorMode, setEditorMode] = useState<"steps" | "grid">("steps");
-  const [selectedBindingId, setSelectedBindingId] = useState<number | null>(bindings[0]?.logicalId ?? null);
   const total = totalTicks(sequence);
   const loopValue = bindings.length && bindings.every((b) => b.loop) ? "loop" : bindings.some((b) => b.loop) ? "mixed" : "once";
   const releaseValue = bindings.length && bindings.every((b) => b.cancelOnRelease) ? "cancel" : bindings.some((b) => b.cancelOnRelease) ? "mixed" : "complete";
-  const selectedBinding = bindings.find((binding) => binding.logicalId === selectedBindingId) ?? bindings[0];
+  const loopSync = bindings.length > 0 && bindings.every((binding) => binding.loopSync);
   function toggleTransformAxis(binding: SequenceBinding, axis: "horizontal" | "vertical") {
     const current = transformAxes(binding.transform);
     setBindingTransform(binding.logicalId, transformFromAxes(axis === "horizontal" ? !current.horizontal : current.horizontal, axis === "vertical" ? !current.vertical : current.vertical));
@@ -563,14 +562,13 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
         })}</div>
       </div>
       <div className="behavior-strip macro-behavior">
-        <label className="control"><span>{t("設定対象", "Assignment")}</span><select disabled={!bindings.length} value={selectedBinding?.logicalId ?? ""} onChange={(event) => setSelectedBindingId(Number(event.target.value))}>{bindings.map((binding) => <option value={binding.logicalId} key={binding.logicalId}>{buttonLabel(EDITOR_LOGICAL_BUTTONS[binding.logicalId])}</option>)}</select></label>
         <label className="control"><span>{t("再生", "Playback")}</span><select disabled={!bindings.length} value={loopValue} onChange={(e) => setBindingMode("loop", e.target.value === "loop")}><option value="once">{t("1回再生", "Play once")}</option><option value="loop">{t("押している間反復", "Repeat while held")}</option>{loopValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
         <label className="control"><span>{t("離したとき", "On release")}</span><select disabled={!bindings.length} value={releaseValue} onChange={(e) => setBindingMode("cancelOnRelease", e.target.value === "cancel")}><option value="complete">{t("現在の再生を完了", "Finish playback")}</option><option value="cancel">{t("すぐに中断", "Stop immediately")}</option>{releaseValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
-        <label className="control loop-start-control"><span>{t("ループ開始ステップ", "Loop start step")}</span><IntegerInput key={`loop-${sequence.loopStart}-${sequence.steps.length}`} ariaLabel={t("ループ開始ステップ", "Loop start step")} value={sequence.loopStart + 1} min={1} max={sequence.steps.length} onCommit={(value) => { updateSequence((s) => { s.loopStart = value - 1; }); if (value !== 1) bindings.filter((binding) => binding.loopSync).forEach((binding) => setBindingLoopSync(binding.logicalId, false)); }} /></label>
-        <label className="control"><span>{t("合成", "Composition")}</span><select disabled={!selectedBinding} value={selectedBinding?.composition ?? "autoLever"} onChange={(event) => selectedBinding && setBindingComposition(selectedBinding.logicalId, event.target.value as CompositionMode)}><option value="or">OR</option><option value="autoLever">{t("自動", "Automatic")}</option><option value="custom">{t("カスタム", "Custom")}</option></select></label>
-        <label className="control check-control"><span>{t("同期", "Sync")}</span><span className="inline-check"><input type="checkbox" disabled={!selectedBinding} checked={selectedBinding?.loopSync ?? false} onChange={(event) => selectedBinding && setBindingLoopSync(selectedBinding.logicalId, event.target.checked)} />{t("ループ同期", "Loop Sync")}</span></label>
+        <label className="control loop-start-control"><span>{t("ループ開始ステップ", "Loop start step")}</span><IntegerInput key={`loop-${sequence.loopStart}-${sequence.steps.length}`} ariaLabel={t("ループ開始ステップ", "Loop start step")} value={sequence.loopStart + 1} min={1} max={sequence.steps.length} onCommit={(value) => { updateSequence((s) => { s.loopStart = value - 1; }); if (value !== 1) setLoopSync(false); }} /></label>
+        <label className="control"><span>{t("合成", "Composition")}</span><select value={sequence.composition} onChange={(event) => setComposition(event.target.value as CompositionMode)}><option value="or">OR</option><option value="autoLever">{t("自動", "Automatic")}</option><option value="custom">{t("カスタム", "Custom")}</option></select></label>
+        <label className="control check-control"><span>{t("同期", "Sync")}</span><span className="inline-check"><input type="checkbox" disabled={!bindings.length} checked={loopSync} onChange={(event) => setLoopSync(event.target.checked)} />{t("ループ同期", "Loop Sync")}</span></label>
       </div>
-      {selectedBinding?.composition === "custom" && <div className="suppression-editor"><span>{t("抑制する出力", "Suppressed outputs")}</span><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={selectedBinding.suppressionMask} onChange={(mask) => setBindingSuppressionMask(selectedBinding.logicalId, mask)} /></div>}
+      {sequence.composition === "custom" && <div className="suppression-editor"><span>{t("抑制する出力", "Suppressed outputs")}</span><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={sequence.suppressionMask} onChange={setSuppressionMask} /></div>}
       <div className="sequence-summary" aria-label={t("シーケンス", "Sequence")}>{sequence.steps.map((step, index) => <div className="sequence-summary-item" key={index}><span className="sequence-command">{commandLabel(step.mask, twoPlayerOutputs)}</span>{step.frames > 1 && <small>×{step.frames}</small>}{index < sequence.steps.length - 1 && <b aria-hidden="true">›</b>}</div>)}</div>
       <div className="editor-toolbar"><span>{sequence.steps.length} {t("ステップ", "steps")} · {total} tick · {total * frameStep} {t("フレーム", "frames")}</span><div className="editor-mode"><button className={editorMode === "steps" ? "active" : ""} onClick={() => setEditorMode("steps")}>{t("ステップ", "Steps")}</button><button className={editorMode === "grid" ? "active" : ""} onClick={() => setEditorMode("grid")}>{t("タイムライン", "Timeline")}</button></div></div>
       {editorMode === "steps" ? <><div className="steps-list"><div className="steps-head"><span>#</span><span>{t("出力", "Output")}</span><span>tick</span><span /></div>

@@ -17,10 +17,10 @@ export type EasyArcadeProfileJson = {
   mappings: Record<LogicalButton, Output[]>;
   rapidFire: Record<LogicalButton, RapidFireOverride>;
   macroSets: { id: number; name: string }[];
-  sequences: { id: number; name: string; loopStart: number; steps: { outputs: Output[]; ticks: number }[] }[];
+  sequences: { id: number; name: string; loopStart: number; composition: CompositionMode; suppressedOutputs: Output[]; steps: { outputs: Output[]; ticks: number }[] }[];
   bindings: {
     logicalButton: LogicalButton; sequenceId: number; setId: number; loop: boolean; loopSync: boolean;
-    cancelOnRelease: boolean; transform: OutputTransform; composition: CompositionMode; suppressedOutputs: Output[];
+    cancelOnRelease: boolean; transform: OutputTransform;
   }[];
   selectors: {
     id: number; name: string; incrementButton: LogicalButton; decrementButton: LogicalButton;
@@ -156,9 +156,11 @@ export function parseProfileJson(value: unknown): Profile {
   const sequenceValues = arrayAt(root.sequences, "$.sequences");
   if (sequenceValues.length > 64) fail("$.sequences", "64件以下である必要があります", "must contain no more than 64 items");
   const sequenceIds = new Set<number>();
+  const sequencesWithComposition = new Set<number>();
   const sequences = sequenceValues.map((value, index) => {
     const path = `$.sequences[${index}]`;
-    const item = exactObject(value, path, ["id", "name", "loopStart", "steps"]);
+    const legacyFields = ["id", "name", "loopStart", "steps"] as const;
+    const item = exactObject(value, path, [...legacyFields, "composition", "suppressedOutputs"], legacyFields);
     const id = integerAt(item.id, `${path}.id`, 0, 254);
     if (sequenceIds.has(id)) fail(`${path}.id`, "重複しています", "is duplicated");
     sequenceIds.add(id);
@@ -169,7 +171,13 @@ export function parseProfileJson(value: unknown): Profile {
       const step = exactObject(stepValue, stepPath, ["outputs", "ticks"]);
       return { mask: maskFor(outputListAt(step.outputs, `${stepPath}.outputs`)), frames: integerAt(step.ticks, `${stepPath}.ticks`, 1, 65535) };
     });
-    return { id, name: stringAt(item.name, `${path}.name`), loopStart: integerAt(item.loopStart, `${path}.loopStart`, 0, steps.length - 1), steps };
+    const composition = Object.hasOwn(item, "composition") ? enumAt(item.composition, `${path}.composition`, ["or", "autoLever", "custom"] as const) : "or";
+    if (Object.hasOwn(item, "composition")) sequencesWithComposition.add(id);
+    const partial = { id, name: stringAt(item.name, `${path}.name`), loopStart: integerAt(item.loopStart, `${path}.loopStart`, 0, steps.length - 1), composition, suppressionMask: 0, steps };
+    partial.suppressionMask = Object.hasOwn(item, "suppressedOutputs")
+      ? maskFor(outputListAt(item.suppressedOutputs, `${path}.suppressedOutputs`))
+      : composition === "autoLever" ? automaticSuppressionMask(partial) : 0;
+    return partial;
   });
 
   const bindingValues = arrayAt(root.bindings, "$.bindings");
@@ -181,10 +189,13 @@ export function parseProfileJson(value: unknown): Profile {
     const logicalButton = logicalButtonAt(item.logicalButton, `${path}.logicalButton`);
     const sequenceId = integerAt(item.sequenceId, `${path}.sequenceId`, 0, 254);
     const sequence = sequences.find((candidate) => candidate.id === sequenceId);
-    const composition = Object.hasOwn(item, "composition") ? enumAt(item.composition, `${path}.composition`, ["or", "autoLever", "custom"] as const) : "or";
-    const suppressionMask = Object.hasOwn(item, "suppressedOutputs")
-      ? maskFor(outputListAt(item.suppressedOutputs, `${path}.suppressedOutputs`))
-      : composition === "autoLever" && sequence ? automaticSuppressionMask(sequence) : 0;
+    if (sequence && !sequencesWithComposition.has(sequenceId) && Object.hasOwn(item, "composition")) {
+      sequence.composition = enumAt(item.composition, `${path}.composition`, ["or", "autoLever", "custom"] as const);
+      sequence.suppressionMask = Object.hasOwn(item, "suppressedOutputs")
+        ? maskFor(outputListAt(item.suppressedOutputs, `${path}.suppressedOutputs`))
+        : sequence.composition === "autoLever" ? automaticSuppressionMask(sequence) : 0;
+      sequencesWithComposition.add(sequenceId);
+    }
     return {
       logicalId: LOGICAL_BUTTONS.indexOf(logicalButton),
       sequenceId,
@@ -193,8 +204,6 @@ export function parseProfileJson(value: unknown): Profile {
       loopSync: Object.hasOwn(item, "loopSync") ? booleanAt(item.loopSync, `${path}.loopSync`) : false,
       cancelOnRelease: booleanAt(item.cancelOnRelease, `${path}.cancelOnRelease`),
       transform: enumAt(item.transform, `${path}.transform`, ["none", "flipHorizontal", "flipVertical", "flipBoth"] as const),
-      composition,
-      suppressionMask,
     };
   });
 
@@ -260,13 +269,12 @@ export function toProfileJson(profile: Profile): EasyArcadeProfileJson {
     rapidFire,
     macroSets: profile.macroSets.names.map((name, id) => ({ id, name })),
     sequences: [...profile.sequences].sort((a, b) => a.id - b.id).map((sequence) => ({
-      id: sequence.id, name: sequence.name, loopStart: sequence.loopStart,
+      id: sequence.id, name: sequence.name, loopStart: sequence.loopStart, composition: sequence.composition, suppressedOutputs: outputsFor(sequence.suppressionMask),
       steps: sequence.steps.map((step) => ({ outputs: outputsFor(step.mask), ticks: step.frames })),
     })),
     bindings: [...profile.sequenceBindings].sort((a, b) => a.logicalId - b.logicalId || a.sequenceId - b.sequenceId || a.setId - b.setId).map((binding) => ({
       logicalButton: LOGICAL_BUTTONS[binding.logicalId], sequenceId: binding.sequenceId, setId: binding.setId,
       loop: binding.loop, loopSync: binding.loopSync, cancelOnRelease: binding.cancelOnRelease, transform: binding.transform,
-      composition: binding.composition, suppressedOutputs: outputsFor(binding.suppressionMask),
     })),
     selectors: [...profile.selectors].sort((a, b) => a.id - b.id).map((selector) => ({
       id: selector.id, name: selector.name, incrementButton: LOGICAL_BUTTONS[selector.increment], decrementButton: LOGICAL_BUTTONS[selector.decrement],

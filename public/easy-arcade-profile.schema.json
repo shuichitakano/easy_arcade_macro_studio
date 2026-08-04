@@ -34,11 +34,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "name", "loopStart", "steps"],
+        "required": ["id", "name", "loopStart", "composition", "suppressedOutputs", "steps"],
         "properties": {
           "id": { "type": "integer", "minimum": 0, "maximum": 254 },
           "name": { "type": "string" },
           "loopStart": { "type": "integer", "minimum": 0, "maximum": 254 },
+          "composition": { "enum": ["or", "autoLever", "custom"] },
+          "suppressedOutputs": { "$ref": "#/$defs/outputList" },
           "steps": {
             "type": "array",
             "minItems": 1,
@@ -70,9 +72,7 @@
           "loop": { "type": "boolean" },
           "loopSync": { "type": "boolean", "default": false },
           "cancelOnRelease": { "type": "boolean" },
-          "transform": { "enum": ["none", "flipHorizontal", "flipVertical", "flipBoth"] },
-          "composition": { "enum": ["or", "autoLever", "custom"], "default": "or" },
-          "suppressedOutputs": { "$ref": "#/$defs/outputList" }
+          "transform": { "enum": ["none", "flipHorizontal", "flipVertical", "flipBoth"] }
         }
       }
     },

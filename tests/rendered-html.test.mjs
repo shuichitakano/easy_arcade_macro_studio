@@ -20,6 +20,7 @@ test("renders EASY ARCADE Macro Studio", async () => {
   assert.match(html, />共有<\/button>/);
   assert.match(html, />English<\/button>/);
   assert.match(html, /旧形式で書き出す/);
+  assert.doesNotMatch(html, /設定対象/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 

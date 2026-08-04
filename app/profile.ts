@@ -24,13 +24,16 @@ export const MAX_SEQUENCE_BINDINGS = 256;
 export type BinaryProfileVersion = "1.0" | "1.1";
 
 export type SequenceStep = { mask: number; frames: number };
-export type MacroSequence = { id: number; name: string; loopStart: number; steps: SequenceStep[] };
+export type MacroSequence = {
+  id: number; name: string; loopStart: number; steps: SequenceStep[];
+  composition: CompositionMode; suppressionMask: number;
+};
 export type OutputTransform = "none" | "flipHorizontal" | "flipVertical" | "flipBoth";
 export type CompositionMode = "or" | "autoLever" | "custom";
 export type SequenceBinding = {
   logicalId: number; sequenceId: number; setId: number;
   loop: boolean; loopSync: boolean; cancelOnRelease: boolean;
-  transform: OutputTransform; composition: CompositionMode; suppressionMask: number;
+  transform: OutputTransform;
 };
 export type MacroSetConfig = { names: string[] };
 export type RapidTriggerType = "disabled" | "sync" | "front" | "back";
@@ -72,8 +75,8 @@ export function localizeProfileMessage(message: string, locale: "ja" | "en") {
     "全シーケンスの合計は1024ステップまでです": "All sequences combined can contain up to 1,024 steps",
     "マクロ割り当ての論理ボタンが不正です": "A macro assignment has an invalid logical button",
     "マクロ割り当ての出力変換が不正です": "A macro assignment has an invalid output transform",
-    "マクロ割り当ての合成方式が不正です": "A macro assignment has an invalid composition mode",
-    "マクロ割り当ての抑制マスクが不正です": "A macro assignment has an invalid suppression mask",
+    "マクロの合成方式が不正です": "A macro has an invalid composition mode",
+    "マクロの抑制マスクが不正です": "A macro has an invalid suppression mask",
     "OR合成の抑制マスクは0である必要があります": "An OR assignment must have an empty suppression mask",
     "自動合成の抑制マスクがシーケンスと一致しません": "An automatic assignment suppression mask does not match its sequence",
     "ループ同期には先頭からの保持中反復が必要です": "Loop Sync requires repeat-while-held playback starting at the first step",
@@ -262,7 +265,7 @@ export function bindingsFor(profile: Profile, sequenceId: number) {
 
 export function legacyExportIssues(profile: Profile): string[] {
   const issues: string[] = [];
-  if (profile.sequenceBindings.some((binding) => binding.suppressionMask !== 0)) issues.push("v1.0ではマクロの入力抑制を使用できません");
+  if (profile.sequences.some((sequence) => sequence.suppressionMask !== 0)) issues.push("v1.0ではマクロの入力抑制を使用できません");
   if (profile.sequenceBindings.some((binding) => binding.loopSync)) issues.push("v1.0ではループ同期を使用できません");
   if (profile.selectors.some((selector) => selector.occupancyMask !== 0)) issues.push("v1.0ではステートセレクタの占有マスクを使用できません");
   return issues;
@@ -295,6 +298,10 @@ export function validateProfile(profile: Profile): string[] {
     if (!seq.steps.length || seq.steps.length > 255) errors.push(`${seq.name}: ステップ数が範囲外です`);
     if (seq.loopStart < 0 || seq.loopStart >= seq.steps.length) errors.push(`${seq.name}: ループ開始位置が不正です`);
     if (seq.steps.some((step) => step.frames < 1 || step.frames > 65535 || !Number.isInteger(step.mask) || step.mask < 0 || !!(step.mask & ~outputMask))) errors.push(`${seq.name}: ステップが不正です`);
+    if (!(seq.composition === "or" || seq.composition === "autoLever" || seq.composition === "custom")) errors.push("マクロの合成方式が不正です");
+    if (!Number.isInteger(seq.suppressionMask) || seq.suppressionMask < 0 || (seq.suppressionMask & ~outputMask)) errors.push("マクロの抑制マスクが不正です");
+    if (seq.composition === "or" && seq.suppressionMask !== 0) errors.push("OR合成の抑制マスクは0である必要があります");
+    if (seq.composition === "autoLever" && seq.suppressionMask !== automaticSuppressionMask(seq)) errors.push("自動合成の抑制マスクがシーケンスと一致しません");
   }
   if (totalSteps > 1024) errors.push("全シーケンスの合計は1024ステップまでです");
   const bindingKeys = new Set<string>();
@@ -304,10 +311,6 @@ export function validateProfile(profile: Profile): string[] {
     if (binding.logicalId < 0 || binding.logicalId >= LOGICAL_BUTTONS.length) errors.push("マクロ割り当ての論理ボタンが不正です");
     if (!ids.has(binding.sequenceId)) errors.push(`${LOGICAL_BUTTONS[binding.logicalId] ?? "不明"}が未定義のシーケンスを参照しています`);
     if (!(binding.transform === "none" || binding.transform === "flipHorizontal" || binding.transform === "flipVertical" || binding.transform === "flipBoth")) errors.push("マクロ割り当ての出力変換が不正です");
-    if (!(binding.composition === "or" || binding.composition === "autoLever" || binding.composition === "custom")) errors.push("マクロ割り当ての合成方式が不正です");
-    if (!Number.isInteger(binding.suppressionMask) || binding.suppressionMask < 0 || (binding.suppressionMask & ~outputMask)) errors.push("マクロ割り当ての抑制マスクが不正です");
-    if (binding.composition === "or" && binding.suppressionMask !== 0) errors.push("OR合成の抑制マスクは0である必要があります");
-    if (binding.composition === "autoLever" && sequence && binding.suppressionMask !== automaticSuppressionMask(sequence)) errors.push("自動合成の抑制マスクがシーケンスと一致しません");
     if (typeof binding.loopSync !== "boolean" || (binding.loopSync && (!binding.loop || sequence?.loopStart !== 0))) errors.push("ループ同期には先頭からの保持中反復が必要です");
     if (!Number.isInteger(binding.setId) || binding.setId < 0 || binding.setId >= macroSetCount) errors.push("マクロ割り当てのSet IDが不正です");
     if (bindingKeys.has(key)) errors.push("同じセット、論理ボタン、マクロの割り当てが重複しています");
@@ -345,19 +348,16 @@ export function compileProfile(profile: Profile, version: BinaryProfileVersion =
   const bindings: number[] = [];
   const sortedBindings = [...profile.sequenceBindings].sort((a, b) => a.logicalId - b.logicalId || a.sequenceId - b.sequenceId || a.setId - b.setId);
   u16(bindings, sortedBindings.length);
-  if (version === "1.0") {
-    sortedBindings.forEach((binding) => bindings.push(binding.logicalId, binding.sequenceId, binding.setId, (binding.loop ? 1 : 0) | (binding.cancelOnRelease ? 2 : 0) | transformFlags(binding.transform)));
-  } else {
-    const compositionCodes: Record<CompositionMode, number> = { or: 0, autoLever: 1, custom: 2 };
-    sortedBindings.forEach((binding) => {
-      bindings.push(binding.logicalId, binding.sequenceId, binding.setId, (binding.loop ? 1 : 0) | (binding.cancelOnRelease ? 2 : 0) | transformFlags(binding.transform) | (binding.loopSync ? 16 : 0), compositionCodes[binding.composition]);
-      u24(bindings, binding.suppressionMask);
-    });
-  }
+  sortedBindings.forEach((binding) => bindings.push(binding.logicalId, binding.sequenceId, binding.setId, (binding.loop ? 1 : 0) | (binding.cancelOnRelease ? 2 : 0) | transformFlags(binding.transform) | (version === "1.1" && binding.loopSync ? 16 : 0)));
 
   const definitions: number[] = [profile.sequences.length];
+  const compositionCodes: Record<CompositionMode, number> = { or: 0, autoLever: 1, custom: 2 };
   [...profile.sequences].sort((a, b) => a.id - b.id).forEach((seq) => {
-    definitions.push(seq.id, seq.steps.length, seq.loopStart, 0);
+    if (version === "1.1") {
+      definitions.push(seq.id, seq.steps.length, seq.loopStart, compositionCodes[seq.composition]);
+      u24(definitions, seq.suppressionMask);
+      definitions.push(0);
+    } else definitions.push(seq.id, seq.steps.length, seq.loopStart, 0);
     seq.steps.forEach((step) => { u24(definitions, step.mask); u16(definitions, step.frames); });
   });
 
@@ -420,11 +420,12 @@ export function parseProfile(bytes: Uint8Array): Profile {
   const mappings = Array.from({ length: LOGICAL_BUTTONS.length }, (_, i) => i < storedLogicalCount ? outputWidth === 3 ? read24(direct, i * 3) : directView.getUint16(i * 2, true) : 0);
 
   const sequenceBindings: SequenceBinding[] = [];
+  const legacyCompositionBySequence = new Map<number, { composition: CompositionMode; suppressionMask: number }>();
   const countedBindingCount = bindingData.length >= 2 ? new DataView(bindingData.buffer, bindingData.byteOffset, bindingData.byteLength).getUint16(0, true) : -1;
   const recordSize = bindingData.length === 2 + countedBindingCount * 8 ? 8 : bindingData.length === 2 + countedBindingCount * 4 ? 4 : bindingData.length === 2 + countedBindingCount * 3 ? 3 : bindingData.length === 2 + countedBindingCount * 5 ? 5 : 0;
   const legacyBinding = (logicalId: number, sequenceId: number, setId: number, flags: number): SequenceBinding => ({
     logicalId, sequenceId, setId, loop: !!(flags & 1), loopSync: false, cancelOnRelease: !!(flags & 2),
-    transform: transformFromFlags(flags), composition: "or", suppressionMask: 0,
+    transform: transformFromFlags(flags),
   });
   if (!recordSize && bindingData.length === 34) {
     for (let logicalId = 0; logicalId < 17; logicalId++) {
@@ -439,13 +440,18 @@ export function parseProfile(bytes: Uint8Array): Profile {
         const setId = bindingData[p + 2], flags = bindingData[p + 3], compositionCode = bindingData[p + 4];
         if (flags & ~31 || compositionCode > 2) throw new Error("Sequence Bindingの長さが不正です");
         const compositions: CompositionMode[] = ["or", "autoLever", "custom"];
-        sequenceBindings.push({ logicalId, sequenceId, setId, loop: !!(flags & 1), loopSync: !!(flags & 16), cancelOnRelease: !!(flags & 2), transform: transformFromFlags(flags), composition: compositions[compositionCode], suppressionMask: read24(bindingData, p + 5) });
+        const legacyComposition = { composition: compositions[compositionCode], suppressionMask: read24(bindingData, p + 5) };
+        if (!legacyCompositionBySequence.has(sequenceId)) legacyCompositionBySequence.set(sequenceId, legacyComposition);
+        sequenceBindings.push({ logicalId, sequenceId, setId, loop: !!(flags & 1), loopSync: !!(flags & 16), cancelOnRelease: !!(flags & 2), transform: transformFromFlags(flags) });
       } else if (recordSize === 5) {
         const flags = bindingData[p + 2], setMask = bindingData[p + 3] | (bindingData[p + 4] << 8);
         for (let setId = 0; setId < 16; setId++) if (setMask & (1 << setId)) sequenceBindings.push(legacyBinding(logicalId, sequenceId, setId, flags));
       } else {
         const setId = recordSize === 4 ? bindingData[p + 2] : 0, flags = bindingData[p + recordSize - 1];
-        sequenceBindings.push(legacyBinding(logicalId, sequenceId, setId, flags));
+        if (flags & ~(minor === 1 && recordSize === 4 ? 31 : 15)) throw new Error("Sequence Bindingの長さが不正です");
+        const binding = legacyBinding(logicalId, sequenceId, setId, flags);
+        if (minor === 1 && recordSize === 4) binding.loopSync = !!(flags & 16);
+        sequenceBindings.push(binding);
       }
     }
   }
@@ -468,21 +474,41 @@ export function parseProfile(bytes: Uint8Array): Profile {
   const sequences: MacroSequence[] = [];
   let legacyFrameStep = 0;
   if (defs) {
-    const dv = new DataView(defs.buffer, defs.byteOffset, defs.byteLength);
-    let p = 1;
-    for (let n = 0; n < defs[0]; n++) {
-      if (p + 4 > defs.length) throw new Error("シーケンス定義が途中で終了しています");
-      const id = defs[p], count = defs[p + 1], loopStart = defs[p + 2], definitionReserved = defs[p + 3]; p += 4;
-      if (!hasGlobalFrameStep && !legacyFrameStep && definitionReserved) legacyFrameStep = definitionReserved;
-      const steps: SequenceStep[] = [];
-      const stepSize = outputWidth + 2;
-      for (let i = 0; i < count; i++, p += stepSize) {
-        if (p + stepSize > defs.length) throw new Error("ステップが途中で終了しています");
-        steps.push({ mask: outputWidth === 3 ? read24(defs, p) : dv.getUint16(p, true), frames: dv.getUint16(p + outputWidth, true) });
+    const parseDefinitions = (headerSize: 4 | 8): MacroSequence[] => {
+      const parsed: MacroSequence[] = [];
+      const dv = new DataView(defs.buffer, defs.byteOffset, defs.byteLength);
+      let p = 1;
+      for (let n = 0; n < defs[0]; n++) {
+        if (p + headerSize > defs.length) throw new Error("シーケンス定義が途中で終了しています");
+        const id = defs[p], count = defs[p + 1], loopStart = defs[p + 2];
+        let composition: CompositionMode = "or", suppressionMask = 0;
+        if (headerSize === 8) {
+          const compositionCode = defs[p + 3];
+          if (compositionCode > 2 || defs[p + 7] !== 0) throw new Error("シーケンス定義が不正です");
+          composition = (["or", "autoLever", "custom"] as CompositionMode[])[compositionCode];
+          suppressionMask = read24(defs, p + 4);
+        } else {
+          const legacy = legacyCompositionBySequence.get(id);
+          if (legacy) ({ composition, suppressionMask } = legacy);
+          const definitionReserved = defs[p + 3];
+          if (!hasGlobalFrameStep && !legacyFrameStep && definitionReserved) legacyFrameStep = definitionReserved;
+        }
+        p += headerSize;
+        const steps: SequenceStep[] = [];
+        const stepSize = outputWidth + 2;
+        for (let i = 0; i < count; i++, p += stepSize) {
+          if (p + stepSize > defs.length) throw new Error("ステップが途中で終了しています");
+          steps.push({ mask: outputWidth === 3 ? read24(defs, p) : dv.getUint16(p, true), frames: dv.getUint16(p + outputWidth, true) });
+        }
+        parsed.push({ id, name: `Macro ${id + 1}`, loopStart, composition, suppressionMask, steps });
       }
-      sequences.push({ id, name: `Macro ${id + 1}`, loopStart, steps });
-    }
-    if (p !== defs.length) throw new Error("シーケンス定義に余剰データがあります");
+      if (p !== defs.length) throw new Error("シーケンス定義に余剰データがあります");
+      return parsed;
+    };
+    if (minor === 1) {
+      try { sequences.push(...parseDefinitions(8)); }
+      catch { sequences.push(...parseDefinitions(4)); }
+    } else sequences.push(...parseDefinitions(4));
   }
   if (!hasGlobalFrameStep && legacyFrameStep) frameStep = legacyFrameStep;
 
@@ -562,10 +588,11 @@ type LegacyBinding = {
   logicalId?: number; sequenceId: number | null; setId?: number; loop: boolean; loopSync?: boolean; cancelOnRelease: boolean;
   delayFrames?: number; transform?: OutputTransform; setMask?: number; composition?: CompositionMode; suppressionMask?: number;
 };
-type LegacySequence = MacroSequence & { frameStep?: number; trigger?: number; loop?: boolean; cancelOnRelease?: boolean };
+type LegacySequence = Omit<MacroSequence, "composition" | "suppressionMask"> & Partial<Pick<MacroSequence, "composition" | "suppressionMask">> & { frameStep?: number; trigger?: number; loop?: boolean; cancelOnRelease?: boolean };
 
 export function normalizeProfile(candidate: Partial<Profile> & { sequenceBindings?: LegacyBinding[]; sequences?: LegacySequence[] }): Profile {
   const base = createDefaultProfile();
+  const candidateBindings = candidate.sequenceBindings as LegacyBinding[] | undefined;
   const candidateSequences: LegacySequence[] = candidate.sequences ?? base.sequences;
   const legacyFrameStep = candidateSequences.find((sequence) => Number.isInteger(sequence.frameStep))?.frameStep;
   const sequences: MacroSequence[] = candidateSequences.map((sequence) => ({
@@ -573,31 +600,34 @@ export function normalizeProfile(candidate: Partial<Profile> & { sequenceBinding
     name: sequence.name,
     loopStart: sequence.loopStart,
     steps: sequence.steps.map((step) => ({ ...step })),
+    composition: sequence.composition ?? candidateBindings?.find((binding) => binding.sequenceId === sequence.id)?.composition ?? "or",
+    suppressionMask: sequence.suppressionMask ?? candidateBindings?.find((binding) => binding.sequenceId === sequence.id)?.suppressionMask ?? 0,
   }));
   let sequenceBindings: SequenceBinding[] = [];
   function migrateBinding(binding: LegacyBinding, logicalId: number): SequenceBinding[] {
     if (binding.sequenceId === null) return [];
-    const sequence = sequences.find((item) => item.id === binding.sequenceId);
-    const composition = binding.composition ?? "or";
     const common = {
       logicalId, sequenceId: binding.sequenceId, loop: binding.loop, loopSync: binding.loopSync === true,
-      cancelOnRelease: binding.cancelOnRelease, transform: binding.transform ?? "none" as OutputTransform, composition,
-      suppressionMask: composition === "or" ? 0 : composition === "autoLever" && sequence ? automaticSuppressionMask(sequence) : binding.suppressionMask ?? 0,
+      cancelOnRelease: binding.cancelOnRelease, transform: binding.transform ?? "none" as OutputTransform,
     };
     if (typeof binding.setId === "number") return [{ ...common, setId: binding.setId }];
     const setMask = binding.setMask ?? 1;
     return Array.from({ length: 16 }, (_, setId) => setId).filter((setId) => setMask & (1 << setId)).map((setId) => ({ ...common, setId }));
   }
-  if (Array.isArray(candidate.sequenceBindings)) {
-    const isFlat = candidate.sequenceBindings.every((binding) => typeof binding.logicalId === "number");
+  if (Array.isArray(candidateBindings)) {
+    const isFlat = candidateBindings.every((binding) => typeof binding.logicalId === "number");
     if (isFlat) {
-      sequenceBindings = candidate.sequenceBindings.flatMap((binding) => migrateBinding(binding, binding.logicalId!));
+      sequenceBindings = candidateBindings.flatMap((binding) => migrateBinding(binding, binding.logicalId!));
     } else {
-      candidate.sequenceBindings.forEach((binding, logicalId) => sequenceBindings.push(...migrateBinding(binding, logicalId)));
+      candidateBindings.forEach((binding, logicalId) => sequenceBindings.push(...migrateBinding(binding, logicalId)));
     }
   } else {
-    candidateSequences.forEach((sequence) => { if (typeof sequence.trigger === "number") sequenceBindings.push({ logicalId: sequence.trigger, sequenceId: sequence.id, setId: 0, loop: !!sequence.loop, loopSync: false, cancelOnRelease: !!sequence.cancelOnRelease, transform: "none", composition: "or", suppressionMask: 0 }); });
+    candidateSequences.forEach((sequence) => { if (typeof sequence.trigger === "number") sequenceBindings.push({ logicalId: sequence.trigger, sequenceId: sequence.id, setId: 0, loop: !!sequence.loop, loopSync: false, cancelOnRelease: !!sequence.cancelOnRelease, transform: "none" }); });
   }
+  sequences.forEach((sequence) => {
+    if (sequence.composition === "or") sequence.suppressionMask = 0;
+    else if (sequence.composition === "autoLever") sequence.suppressionMask = automaticSuppressionMask(sequence);
+  });
   const inheritedRapid = inheritedRapidFire();
   const rapidFire = Array.isArray(candidate.rapidFire)
     ? inheritedRapid.map((fallback, index) => {

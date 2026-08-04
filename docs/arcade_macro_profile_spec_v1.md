@@ -68,7 +68,7 @@
 
 ## 5. 直接マッピング
 
-各論理ボタンは0個以上の実基板出力へ割り当てられる。複数の論理ボタンが同じ出力を生成した場合はOR合成する。シーケンス起動に使った論理ボタンの直接マッピングも同時に評価されるが、シーケンスバインディングの合成方式によって抑制される場合がある。
+各論理ボタンは0個以上の実基板出力へ割り当てられる。複数の論理ボタンが同じ出力を生成した場合はOR合成する。シーケンス起動に使った論理ボタンの直接マッピングも同時に評価されるが、シーケンス定義の合成方式によって抑制される場合がある。
 
 ## 6. シーケンサ
 
@@ -84,11 +84,11 @@
 
 ### 6.1 出力合成
 
-各バインディングは、次のいずれかの合成方式を持つ。
+各シーケンス定義は、次のいずれかの合成方式を持つ。同じシーケンスをどの論理ボタンやマクロセットから起動しても合成方式は共通である。
 
 - `OR`: 抑制マスクを0とし、シーケンス出力を既存出力へORする
 - `自動`: シーケンス全体で1P側の方向出力を1つでも使用する場合は1P側のUP、DOWN、LEFT、RIGHTをすべて抑制する。2P側も独立に同じ判定を行う。方向以外は抑制しない
-- `カスタム`: バインディングに設定された任意の24ビット抑制マスクを使用する
+- `カスタム`: シーケンス定義に設定された任意の24ビット抑制マスクを使用する
 
 抑制マスクはシーケンスの起動から終了まで有効とし、現在ステップの出力が0でも解除しない。出力変換はシーケンス出力とカスタム抑制マスクの両方へ適用する。`自動`で生成される各プレイヤーの4方向マスクは、左右・上下反転後も同じ値となる。
 
@@ -205,7 +205,7 @@ Profile JSONでは、論理ボタンと実基板出力をビット番号や数�
 
 `macroSets`の各要素は`id`と`name`を持つ。IDは0から連続し、要素順と一致しなければならない。
 
-`sequences`の各要素は`id`、`name`、`loopStart`、`steps`を持つ。`bindings`の各要素は`logicalButton`、`sequenceId`、`setId`、`loop`、`loopSync`、`cancelOnRelease`、`transform`、`composition`、`suppressedOutputs`を持つ。`transform`は`none`、`flipHorizontal`、`flipVertical`、`flipBoth`のいずれか、`composition`は`or`、`autoLever`、`custom`のいずれかとする。`suppressedOutputs`は実基板出力名のarray、`loopSync`はbooleanとする。
+`sequences`の各要素は`id`、`name`、`loopStart`、`composition`、`suppressedOutputs`、`steps`を持つ。`bindings`の各要素は`logicalButton`、`sequenceId`、`setId`、`loop`、`loopSync`、`cancelOnRelease`、`transform`を持つ。`transform`は`none`、`flipHorizontal`、`flipVertical`、`flipBoth`のいずれか、`composition`は`or`、`autoLever`、`custom`のいずれかとする。`suppressedOutputs`は実基板出力名のarray、`loopSync`はbooleanとする。
 
 `composition=or`では`suppressedOutputs`は空arrayでなければならない。`composition=autoLever`では、参照シーケンス全体から第6.1節の規則で求めた方向出力と一致しなければならない。`composition=custom`では任意の有効な実基板出力を指定できる。エディタは自動値を表示用に再計算できるが、Profile JSONと実機用バイナリの相互変換を決定的にするため、計算結果も`suppressedOutputs`へ保存する。
 
@@ -256,6 +256,8 @@ Profile JSONの`metadata`は編集・生成・共有のための情報であり�
       "id": 0,
       "name": "Hadoken",
       "loopStart": 0,
+      "composition": "autoLever",
+      "suppressedOutputs": ["UP", "DOWN", "LEFT", "RIGHT"],
       "steps": [
         { "outputs": ["DOWN"], "ticks": 1 },
         { "outputs": ["DOWN", "RIGHT"], "ticks": 1 },
@@ -271,9 +273,7 @@ Profile JSONの`metadata`は編集・生成・共有のための情報であり�
       "loop": false,
       "loopSync": false,
       "cancelOnRelease": false,
-      "transform": "none",
-      "composition": "autoLever",
-      "suppressedOutputs": ["UP", "DOWN", "LEFT", "RIGHT"]
+      "transform": "none"
     }
   ],
   "selectors": [],
@@ -331,7 +331,7 @@ ID順の32個のuint24出力マスク。各uint24は下位byteから格納し、
 
 ### Sequence Binding
 
-先頭uint16がバインディング数。v1.1では続く各8-byteレコードを次の構造とする。同じLogical IDを複数レコードに含めてよい。同じSet ID、Logical ID、Sequence IDの組は重複してはならない。
+先頭uint16がバインディング数。v1.1では続く各4-byteレコードを次の構造とする。同じLogical IDを複数レコードに含めてよい。同じSet ID、Logical ID、Sequence IDの組は重複してはならない。
 
 | Offset | Size | Field | 内容 |
 |---:|---:|---|---|
@@ -339,16 +339,25 @@ ID順の32個のuint24出力マスク。各uint24は下位byteから格納し、
 | 1 | 1 | Sequence ID | 参照するシーケンスID |
 | 2 | 1 | Set ID | 有効なマクロセットID |
 | 3 | 1 | Playback Flags | bit 0: 保持中反復、bit 1: リリース時即時中断、bit 2: 左右反転、bit 3: 上下反転、bit 4: Loop Sync、bit 5〜7: 0 |
-| 4 | 1 | Composition Mode | 0: OR、1: 自動、2: カスタム。その他は不正 |
-| 5 | 3 | Suppression Mask | 下位byteから格納するuint24抑制マスク |
 
-ORではSuppression Maskを0とする。自動では参照シーケンスから算出した値と一致しなければならない。カスタムでは任意の有効な実基板出力マスクを指定できる。Loop Syncが1の場合は第6.2節の保持中反復とループ開始位置の条件を検証する。
+Loop Syncが1の場合は第6.2節の保持中反復とループ開始位置の条件を検証する。
 
-v1.0では各レコードを先頭4 bytesだけで構成し、Playback Flagsのbit 4〜7を0とする。合成方式はOR、抑制マスクは0、Loop Syncは無効として動作する。
+v1.0でもレコード長は4 bytesだが、Playback Flagsのbit 4〜7を0とし、Loop Syncは無効として動作する。
 
 ### Sequence Definitions
 
-先頭1 byteが定義数。各定義はSequence ID、Step Count、Loop Start Step、Reservedの4 bytesで、Reservedは0。続く各ステップはuint24 Output Maskとuint16 Duration Ticksの5 bytes。
+先頭1 byteが定義数。v1.1の各定義は次の8-byteヘッダを持つ。続く各ステップはuint24 Output Maskとuint16 Duration Ticksの5 bytes。
+
+| Offset | Size | Field | 内容 |
+|---:|---:|---|---|
+| 0 | 1 | Sequence ID | シーケンスID |
+| 1 | 1 | Step Count | ステップ数 |
+| 2 | 1 | Loop Start Step | ループ開始ステップ |
+| 3 | 1 | Composition Mode | 0: OR、1: 自動、2: カスタム。その他は不正 |
+| 4 | 3 | Suppression Mask | 下位byteから格納するuint24抑制マスク |
+| 7 | 1 | Reserved | 0 |
+
+ORではSuppression Maskを0とする。自動ではシーケンス全体から算出した値と一致しなければならない。カスタムでは任意の有効な実基板出力マスクを指定できる。v1.0の定義ヘッダはSequence ID、Step Count、Loop Start Step、Reservedの4 bytesで、合成方式OR、抑制マスク0として動作する。
 
 ### State Selectors
 
@@ -485,7 +494,7 @@ RP2040系のFlash保存では8KBを1スロットとし、別の空きスロッ�
 UIはバイナリのセクション配置をそのまま見せず、次の責務に分ける。
 
 1. **ボタン設定**: 論理ボタンごとの直接出力と連射オーバーライドを編集する
-2. **マクロシーケンス**: 編集対象のマクロセットを切り替え、名前、セットごとの複数トリガーボタン、入力ごとの出力反転、再生属性、合成方式、ループ同期、ステップ列、ループ開始位置を編集する。任意位置へのステップ挿入・削除と、入力割り当てを含むマクロ全体の複製に対応する
+2. **マクロシーケンス**: 編集対象のマクロセットを切り替え、名前、セットごとの複数トリガーボタン、入力ごとの出力反転、再生属性、マクロ単位の合成方式、ループ同期、ステップ列、ループ開始位置を編集する。任意位置へのステップ挿入・削除と、入力割り当てを含むマクロ全体の複製に対応する
 3. **マクロセット**: 1〜16個のセット名を編集する。初期セットと切替操作はプロファイル設定に含めない
 4. **ステートセレクタ**: 増加・減少論理ボタン、状態範囲、Clamp/Wrap、ニュートラル期間、占有マスク、状態出力を編集する
 5. **割り当て一覧**: 表示対象のマクロセットを切り替え、論理ボタンごとの直接出力、連射、そのセットで有効なマクロ、全ステートモディファイアを横断表示する。読み取り専用でよい
@@ -498,9 +507,9 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 
 標準の実機向け書き出しは最新のv1.1 `.eamacro`とする。ファイル操作メニューの下部に、旧ファームウェア用v1.0書き出しを控えめな互換機能として設ける。v1.0で表現できない0以外の抑制マスク、Loop Sync、占有マスクが使われている場合は、設定を暗黙に削除せず該当理由を示して書き出しを拒否する。自動またはカスタム合成でも実効抑制マスクが0なら、実行動作がORと同一なのでv1.0へ書き出してよい。Profile JSONの書き出しも提供し、対応ブラウザではOSの保存ダイアログを開いて、ユーザーが任意の保存先とファイル名を選択できるようにする。非対応ブラウザでは通常のファイルダウンロードへフォールバックする。
 
-同じシーケンス定義は複数の論理ボタンへ割り当ててよく、同じ論理ボタンから複数のシーケンスを起動してよい。反復、ループ同期、リリース属性、出力反転、合成方式、抑制マスクは各バインディングに属する。遅延違いの派生マクロは複製し、先頭に任意長の無出力ステップを追加して表現できる。
+同じシーケンス定義は複数の論理ボタンへ割り当ててよく、同じ論理ボタンから複数のシーケンスを起動してよい。反復、ループ同期、リリース属性、出力反転は各バインディングに属し、合成方式と抑制マスクはシーケンス定義に属する。遅延違いの派生マクロは複製し、先頭に任意長の無出力ステップを追加して表現できる。
 
-合成方式は各トリガー割り当ての中で`OR`、`自動`、`カスタム`から選択する。新しい割り当ての初期値は`自動`とする。`自動`では算出された抑制対象を表示し、`カスタム`へ切り替えた際はその自動値を初期値として引き継いでよい。`ループ同期`は保持中反復と同じ割り当て内にチェックボックスとして置き、無効な再生条件では選択できないようにする。
+合成方式はマクロ編集内で`OR`、`自動`、`カスタム`から選択する。「設定対象」のようなトリガー選択UIは設けない。新しいマクロの初期値は`自動`とする。`自動`では算出された抑制対象を表示し、`カスタム`へ切り替えた際はその自動値を初期値として引き継いでよい。`ループ同期`は保持中反復と同じ設定列に置き、現在のセットでそのマクロを起動する全トリガーへ同じ値を適用する。
 
 マクロ起動入力と左右・上下反転フラグは、論理ボタンごとの同一UI要素内で編集する。反転属性だけを別一覧へ分離しない。
 
@@ -516,7 +525,7 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 
 初期試作エディタが生成した17個または18個の論理ボタンを持つDirect MappingおよびRapid Fire Overridesも、PCエディタは移行読み込みしてよい。存在しない論理ボタンIDは既定値で補い、新規保存は常に32個のレコードを出力する。EASY ARCADE本体はこれらの試作形式へ対応する必要がない。
 
-初期試作エディタおよび正式v1.0が生成した4-byte Sequence Bindingは、合成方式OR、抑制マスク0、Loop Sync無効として読み込む。Occupancy Maskを持たないState Selectorsは占有マスク0として読み込み、従来のOR合成動作を維持する。通常保存は8-byte Sequence BindingとOccupancy Mask付きState Selectorsを持つv1.1とし、明示的な旧形式エクスポートだけが正式v1.0を生成する。
+初期試作エディタおよび正式v1.0が生成した4-byte Sequence BindingはLoop Sync無効として読み込み、4-byte Sequence Definitionは合成方式OR、抑制マスク0として読み込む。Occupancy Maskを持たないState Selectorsは占有マスク0として読み込み、従来のOR合成動作を維持する。通常保存は8-byte Sequence Definition、Loop Sync対応4-byte Sequence Binding、Occupancy Mask付きState Selectorsを持つv1.1とし、明示的な旧形式エクスポートだけが正式v1.0を生成する。
 
 オンライン共有では、サーバー内部の保存形式としてProfile JSONまたは同等の正規化済みデータを使用できる。共有サイトからダウンロードする実機向け成果物は、検証済みProfile JSONからサーバーまたはエディタが生成した`.eamacro`とする。REST APIやMCPを追加する場合も、独自のAI専用形式を設けず、Profile JSONを共通の入出力形式とする。
 
