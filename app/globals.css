@@ -44,6 +44,7 @@ button { cursor: pointer; }
 .file-menu-popover button:hover:not(:disabled) { background: var(--subtle); }
 .file-menu-popover button:disabled { cursor: not-allowed; opacity: .4; }
 .file-menu-popover small { color: var(--muted); font-size: 10px; }
+.file-menu-popover button.legacy-export { color: var(--muted); font-size: 11px; }
 .file-menu-divider { height: 1px; margin: 5px 6px; background: var(--line); }
 .button { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 13px; font-weight: 600; }
 .button:hover:not(:disabled) { background: var(--subtle); }
@@ -175,8 +176,12 @@ button { cursor: pointer; }
 .flip-flags button.active { background: #dbeafe; color: var(--accent); }
 
 .behavior-strip, .control-grid { padding: 14px 20px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); background: #fafafa; }
-.behavior-strip.macro-behavior { grid-template-columns: repeat(3, minmax(140px, 220px)); justify-content: start; }
+.behavior-strip.macro-behavior { grid-template-columns: repeat(6, minmax(110px, 1fr)); justify-content: start; }
 .control-grid.six { grid-template-columns: repeat(6, 1fr); }
+.inline-check { min-height: 36px; display: flex !important; align-items: center; gap: 7px; color: var(--text) !important; font-size: 12px !important; }
+.inline-check input { width: 15px; height: 15px; padding: 0; accent-color: var(--accent); }
+.suppression-editor { padding: 12px 20px; display: flex; align-items: flex-start; gap: 18px; border-bottom: 1px solid var(--line); background: #fff; }
+.suppression-editor > span { width: 108px; flex: 0 0 108px; padding-top: 7px; color: var(--muted); font-size: 11px; font-weight: 600; }
 
 .editor-toolbar { min-height: 54px; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); }
 .editor-toolbar > span { color: var(--muted); font-size: 12px; }
@@ -348,7 +353,7 @@ a.share-account:hover { color: var(--accent); }
   .rail { border-right: 0; border-bottom: 1px solid var(--line); }
   .rail-list { display: flex; overflow-x: auto; }
   .rail-card { min-width: 190px; }
-  .control-grid.six { grid-template-columns: repeat(3, 1fr); }
+  .control-grid.six, .behavior-strip.macro-behavior { grid-template-columns: repeat(3, 1fr); }
   .trigger-buttons { grid-template-columns: repeat(4, minmax(92px, 1fr)); }
   .steps-head, .step-row { grid-template-columns: 44px minmax(380px, 1fr) 86px 36px; }
   .profile-library { grid-template-columns: repeat(2, minmax(0, 1fr)); }

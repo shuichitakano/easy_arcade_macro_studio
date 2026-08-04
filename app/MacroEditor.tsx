@@ -4,7 +4,7 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  bindingsFor, compileProfile, createDefaultProfile, EDITOR_LOGICAL_BUTTONS, MacroSequence,
+  automaticSuppressionMask, BinaryProfileVersion, bindingsFor, compileProfile, CompositionMode, createDefaultProfile, EDITOR_LOGICAL_BUTTONS, MacroSequence,
   localizeProfileMessage, MAX_SEQUENCE_BINDINGS, normalizeProfile, OUTPUTS, OutputTransform, parseProfile, PLAYER_OUTPUTS, Profile, SequenceBinding, StateSelector, validateProfile,
 } from "./profile";
 import { parseProfileJsonText, ProfileJsonError, serializeProfileJson } from "./profileJson";
@@ -215,12 +215,12 @@ export function MacroEditor() {
     showNotice(t(`${downloadName}をダウンロードしました`, `Downloaded ${downloadName}`));
   }
 
-  async function saveAsMacro() {
+  async function saveAsMacro(version: BinaryProfileVersion = "1.1") {
     closeMenus();
     try {
       const currentProfile = profileRef.current;
-      const bytes = compileProfile(currentProfile);
-      await saveBlob(new Blob([bytes as BlobPart], { type: "application/vnd.easy-arcade.macro" }), profileFileName(currentProfile.name), "EASY ARCADE Macro", "application/vnd.easy-arcade.macro", [".eamacro"]);
+      const bytes = compileProfile(currentProfile, version);
+      await saveBlob(new Blob([bytes as BlobPart], { type: "application/vnd.easy-arcade.macro" }), profileFileName(currentProfile.name), `EASY ARCADE Macro ${version}`, "application/vnd.easy-arcade.macro", [".eamacro"]);
     } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(errorMessage(error, "保存できませんでした", "Could not save the profile")); }
   }
 
@@ -292,7 +292,7 @@ export function MacroEditor() {
     if (profile.selectors.length >= 8) return;
     const used = new Set(profile.selectors.map((s) => s.id));
     let id = 0; while (used.has(id)) id++;
-    update((draft) => draft.selectors.push({ id, name: `Selector ${id + 1}`, increment: 13, decrement: 14, min: 0, max: 1, initial: 0, wrap: false, neutralFrames: 1, outputs: [0, 0], stateNames: ["0", "1"] }));
+    update((draft) => draft.selectors.push({ id, name: `Selector ${id + 1}`, increment: 13, decrement: 14, min: 0, max: 1, initial: 0, wrap: false, neutralFrames: 1, occupancyMask: 0, outputs: [0, 0], stateNames: ["0", "1"] }));
     setSelectedSelector(profile.selectors.length); setNotice(t("新しいセレクタを追加しました", "Added a new selector"));
   }
 
@@ -362,7 +362,9 @@ export function MacroEditor() {
               <button type="button" onClick={saveAsJson} disabled={errors.length > 0}><span>{t("JSONエクスポート", "Export JSON")}</span><small>.eamacro.json</small></button>
               <div className="file-menu-divider" />
               <button type="button" onClick={() => openImport("binary")}><span>{t("バイナリインポート", "Import binary")}</span><small>.eamacro</small></button>
-              <button type="button" onClick={saveAsMacro} disabled={errors.length > 0}><span>{t("バイナリエクスポート", "Export binary")}</span><small>.eamacro</small></button>
+              <button type="button" onClick={() => void saveAsMacro()} disabled={errors.length > 0}><span>{t("バイナリエクスポート", "Export binary")}</span><small>v1.1 · .eamacro</small></button>
+              <div className="file-menu-divider" />
+              <button className="legacy-export" type="button" onClick={() => void saveAsMacro("1.0")} disabled={errors.length > 0}><span>{t("旧形式で書き出す", "Export legacy format")}</span><small>v1.0</small></button>
             </div>
           </details>
         </div>
@@ -396,7 +398,8 @@ export function MacroEditor() {
             if (!event.target.checked) {
               draft.mappings = draft.mappings.map((mask) => mask & 0x0fff);
               draft.sequences.forEach((sequence) => sequence.steps.forEach((step) => { step.mask &= 0x0fff; }));
-              draft.selectors.forEach((item) => { item.outputs = item.outputs.map((mask) => mask & 0x0fff); });
+              draft.sequenceBindings.forEach((binding) => { binding.suppressionMask &= 0x0fff; });
+              draft.selectors.forEach((item) => { item.occupancyMask &= 0x0fff; item.outputs = item.outputs.map((mask) => mask & 0x0fff); });
             }
           })} /><span>2P</span></label>
         </div>
@@ -445,14 +448,20 @@ export function MacroEditor() {
                 })}
               </div>
             </aside>
-            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet && binding.logicalId < EDITOR_LOGICAL_BUTTONS.length)} updateSequence={(mutator) => update((d) => mutator(d.sequences[selectedSequence]))} timelineClipboard={timelineClipboard} setTimelineClipboard={setTimelineClipboard}
+            {seq ? <SequenceEditor key={seq.id} sequence={seq} frameStep={profile.frameStep} twoPlayerOutputs={profile.twoPlayerOutputs} bindings={bindingsFor(profile, seq.id).filter((binding) => binding.setId === selectedMacroSet && binding.logicalId < EDITOR_LOGICAL_BUTTONS.length)} updateSequence={(mutator) => update((d) => {
+              const edited = d.sequences[selectedSequence]; mutator(edited);
+              d.sequenceBindings.filter((binding) => binding.sequenceId === edited.id && binding.composition === "autoLever").forEach((binding) => { binding.suppressionMask = automaticSuppressionMask(edited); });
+            })} timelineClipboard={timelineClipboard} setTimelineClipboard={setTimelineClipboard}
               toggleTrigger={(logicalId) => update((d) => {
                 const found = d.sequenceBindings.findIndex((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet);
                 if (found >= 0) d.sequenceBindings.splice(found, 1);
-                else d.sequenceBindings.push({ logicalId, sequenceId: seq.id, setId: selectedMacroSet, loop: false, cancelOnRelease: false, transform: "none" });
+                else d.sequenceBindings.push({ logicalId, sequenceId: seq.id, setId: selectedMacroSet, loop: false, loopSync: false, cancelOnRelease: false, transform: "none", composition: "autoLever", suppressionMask: automaticSuppressionMask(seq) });
               })}
-              setBindingMode={(field, value) => update((d) => d.sequenceBindings.filter((b) => b.sequenceId === seq.id && b.setId === selectedMacroSet && b.logicalId < EDITOR_LOGICAL_BUTTONS.length).forEach((b) => { b[field] = value; }))}
+              setBindingMode={(field, value) => update((d) => d.sequenceBindings.filter((b) => b.sequenceId === seq.id && b.setId === selectedMacroSet && b.logicalId < EDITOR_LOGICAL_BUTTONS.length).forEach((b) => { b[field] = value; if (field === "loop" && !value) b.loopSync = false; }))}
               setBindingTransform={(logicalId, transform) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) binding.transform = transform; })}
+              setBindingComposition={(logicalId, composition) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) { binding.composition = composition; binding.suppressionMask = composition === "or" ? 0 : composition === "autoLever" ? automaticSuppressionMask(seq) : binding.suppressionMask || automaticSuppressionMask(seq); } })}
+              setBindingSuppressionMask={(logicalId, suppressionMask) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) binding.suppressionMask = suppressionMask; })}
+              setBindingLoopSync={(logicalId, loopSync) => update((d) => { const binding = d.sequenceBindings.find((b) => b.sequenceId === seq.id && b.logicalId === logicalId && b.setId === selectedMacroSet); if (binding) { binding.loopSync = loopSync; if (loopSync) { binding.loop = true; d.sequences[selectedSequence].loopStart = 0; } } })}
               duplicate={duplicateSequence}
               remove={() => { update((d) => { const removedId = d.sequences[selectedSequence].id; d.sequences.splice(selectedSequence, 1); d.sequenceBindings = d.sequenceBindings.filter((binding) => binding.sequenceId !== removedId); }); setSelectedSequence(0); }} /> : <EmptyState label={t("マクロがありません", "No macros yet")} action={t("＋ 最初のマクロを作る", "+ Create the first macro")} onClick={addSequence} />}
           </div>
@@ -508,7 +517,7 @@ function MacroSetEditor({ profile, update, add, remove }: { profile: Profile; up
   );
 }
 
-function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updateSequence, timelineClipboard, setTimelineClipboard, toggleTrigger, setBindingMode, setBindingTransform, duplicate, remove }: {
+function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updateSequence, timelineClipboard, setTimelineClipboard, toggleTrigger, setBindingMode, setBindingTransform, setBindingComposition, setBindingSuppressionMask, setBindingLoopSync, duplicate, remove }: {
   sequence: MacroSequence;
   frameStep: number;
   twoPlayerOutputs: boolean;
@@ -519,14 +528,19 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
   toggleTrigger: (logicalId: number) => void;
   setBindingMode: (field: "loop" | "cancelOnRelease", value: boolean) => void;
   setBindingTransform: (logicalId: number, transform: OutputTransform) => void;
+  setBindingComposition: (logicalId: number, composition: CompositionMode) => void;
+  setBindingSuppressionMask: (logicalId: number, suppressionMask: number) => void;
+  setBindingLoopSync: (logicalId: number, loopSync: boolean) => void;
   duplicate: () => void;
   remove: () => void;
 }) {
   const { t } = useI18n();
   const [editorMode, setEditorMode] = useState<"steps" | "grid">("steps");
+  const [selectedBindingId, setSelectedBindingId] = useState<number | null>(bindings[0]?.logicalId ?? null);
   const total = totalTicks(sequence);
   const loopValue = bindings.length && bindings.every((b) => b.loop) ? "loop" : bindings.some((b) => b.loop) ? "mixed" : "once";
   const releaseValue = bindings.length && bindings.every((b) => b.cancelOnRelease) ? "cancel" : bindings.some((b) => b.cancelOnRelease) ? "mixed" : "complete";
+  const selectedBinding = bindings.find((binding) => binding.logicalId === selectedBindingId) ?? bindings[0];
   function toggleTransformAxis(binding: SequenceBinding, axis: "horizontal" | "vertical") {
     const current = transformAxes(binding.transform);
     setBindingTransform(binding.logicalId, transformFromAxes(axis === "horizontal" ? !current.horizontal : current.horizontal, axis === "vertical" ? !current.vertical : current.vertical));
@@ -549,10 +563,14 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
         })}</div>
       </div>
       <div className="behavior-strip macro-behavior">
+        <label className="control"><span>{t("設定対象", "Assignment")}</span><select disabled={!bindings.length} value={selectedBinding?.logicalId ?? ""} onChange={(event) => setSelectedBindingId(Number(event.target.value))}>{bindings.map((binding) => <option value={binding.logicalId} key={binding.logicalId}>{buttonLabel(EDITOR_LOGICAL_BUTTONS[binding.logicalId])}</option>)}</select></label>
         <label className="control"><span>{t("再生", "Playback")}</span><select disabled={!bindings.length} value={loopValue} onChange={(e) => setBindingMode("loop", e.target.value === "loop")}><option value="once">{t("1回再生", "Play once")}</option><option value="loop">{t("押している間反復", "Repeat while held")}</option>{loopValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
         <label className="control"><span>{t("離したとき", "On release")}</span><select disabled={!bindings.length} value={releaseValue} onChange={(e) => setBindingMode("cancelOnRelease", e.target.value === "cancel")}><option value="complete">{t("現在の再生を完了", "Finish playback")}</option><option value="cancel">{t("すぐに中断", "Stop immediately")}</option>{releaseValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
-        <label className="control loop-start-control"><span>{t("ループ開始ステップ", "Loop start step")}</span><IntegerInput key={`loop-${sequence.loopStart}-${sequence.steps.length}`} ariaLabel={t("ループ開始ステップ", "Loop start step")} value={sequence.loopStart + 1} min={1} max={sequence.steps.length} onCommit={(value) => updateSequence((s) => { s.loopStart = value - 1; })} /></label>
+        <label className="control loop-start-control"><span>{t("ループ開始ステップ", "Loop start step")}</span><IntegerInput key={`loop-${sequence.loopStart}-${sequence.steps.length}`} ariaLabel={t("ループ開始ステップ", "Loop start step")} value={sequence.loopStart + 1} min={1} max={sequence.steps.length} onCommit={(value) => { updateSequence((s) => { s.loopStart = value - 1; }); if (value !== 1) bindings.filter((binding) => binding.loopSync).forEach((binding) => setBindingLoopSync(binding.logicalId, false)); }} /></label>
+        <label className="control"><span>{t("合成", "Composition")}</span><select disabled={!selectedBinding} value={selectedBinding?.composition ?? "autoLever"} onChange={(event) => selectedBinding && setBindingComposition(selectedBinding.logicalId, event.target.value as CompositionMode)}><option value="or">OR</option><option value="autoLever">{t("自動", "Automatic")}</option><option value="custom">{t("カスタム", "Custom")}</option></select></label>
+        <label className="control check-control"><span>{t("同期", "Sync")}</span><span className="inline-check"><input type="checkbox" disabled={!selectedBinding} checked={selectedBinding?.loopSync ?? false} onChange={(event) => selectedBinding && setBindingLoopSync(selectedBinding.logicalId, event.target.checked)} />{t("ループ同期", "Loop Sync")}</span></label>
       </div>
+      {selectedBinding?.composition === "custom" && <div className="suppression-editor"><span>{t("抑制する出力", "Suppressed outputs")}</span><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={selectedBinding.suppressionMask} onChange={(mask) => setBindingSuppressionMask(selectedBinding.logicalId, mask)} /></div>}
       <div className="sequence-summary" aria-label={t("シーケンス", "Sequence")}>{sequence.steps.map((step, index) => <div className="sequence-summary-item" key={index}><span className="sequence-command">{commandLabel(step.mask, twoPlayerOutputs)}</span>{step.frames > 1 && <small>×{step.frames}</small>}{index < sequence.steps.length - 1 && <b aria-hidden="true">›</b>}</div>)}</div>
       <div className="editor-toolbar"><span>{sequence.steps.length} {t("ステップ", "steps")} · {total} tick · {total * frameStep} {t("フレーム", "frames")}</span><div className="editor-mode"><button className={editorMode === "steps" ? "active" : ""} onClick={() => setEditorMode("steps")}>{t("ステップ", "Steps")}</button><button className={editorMode === "grid" ? "active" : ""} onClick={() => setEditorMode("grid")}>{t("タイムライン", "Timeline")}</button></div></div>
       {editorMode === "steps" ? <><div className="steps-list"><div className="steps-head"><span>#</span><span>{t("出力", "Output")}</span><span>tick</span><span /></div>
@@ -702,6 +720,7 @@ function SelectorEditor({ selector, twoPlayerOutputs, update, remove }: { select
         <label className="control"><span>{t("端の動作", "At limits")}</span><select value={selector.wrap ? "wrap" : "clamp"} onChange={(e) => update((s) => { s.wrap = e.target.value === "wrap"; })}><option value="clamp">{t("停止", "Stop")}</option><option value="wrap">{t("循環", "Wrap")}</option></select></label>
         <label className="control"><span>{t("無出力フレーム", "Neutral frames")}</span><input type="number" min="0" max="255" value={selector.neutralFrames} onChange={(e) => update((s) => { s.neutralFrames = Number(e.target.value); })} /></label>
       </div>
+      <div className="suppression-editor"><span>{t("占有マスク", "Occupancy mask")}</span><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={selector.occupancyMask} onChange={(value) => update((s) => { s.occupancyMask = value; })} /></div>
       <div className="state-table"><div className="state-table-head"><span>{t("状態", "State")}</span><span>{t("名前", "Name")}</span><span>{t("出力", "Output")}</span></div>{selector.outputs.map((mask, index) => <div className="state-row" key={index}><strong>{selector.min + index}</strong><input className="state-name-input" aria-label={t(`状態${selector.min + index}の名前`, `Name of state ${selector.min + index}`)} value={selector.stateNames[index]} onChange={(event) => update((s) => { s.stateNames[index] = event.target.value; })} /><OutputToggles twoPlayerOutputs={twoPlayerOutputs} mask={mask} onChange={(value) => update((s) => { s.outputs[index] = value; })} /></div>)}</div>
     </div>
   );

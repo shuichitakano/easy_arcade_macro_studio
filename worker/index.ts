@@ -2,6 +2,8 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 
+interface Fetcher { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>; }
+
 interface Env {
   ASSETS: Fetcher;
   DB?: D1Database;
@@ -212,7 +214,7 @@ async function handleSharedProfiles(request: Request, env: Env, url: URL): Promi
     const row = await env.DB.prepare("SELECT profile_name, file_data FROM shared_profiles WHERE id = ?").bind(fileMatch[1]).first<{ profile_name: string; file_data: ArrayBuffer | Uint8Array | number[] }>();
     if (!row) return jsonError(request, "プロファイルが見つかりません", "Profile not found", 404);
     const bytes = d1BlobBytes(row.file_data);
-    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const body = Uint8Array.from(bytes).buffer;
     return new Response(body, { headers: { "content-type": "application/octet-stream", "content-length": String(bytes.length), "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(row.profile_name))}`, "cache-control": "public, max-age=300" } });
   }
 

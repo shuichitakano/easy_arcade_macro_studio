@@ -1,5 +1,5 @@
 import {
-  EDITOR_LOGICAL_BUTTONS, LOGICAL_BUTTONS, OUTPUTS, OutputTransform, Profile, ProfileMetadata,
+  automaticSuppressionMask, CompositionMode, EDITOR_LOGICAL_BUTTONS, LOGICAL_BUTTONS, OUTPUTS, OutputTransform, Profile, ProfileMetadata,
   ProfileVerification, RapidFireOverride, RapidTriggerType, validateProfile,
 } from "./profile";
 
@@ -18,10 +18,13 @@ export type EasyArcadeProfileJson = {
   rapidFire: Record<LogicalButton, RapidFireOverride>;
   macroSets: { id: number; name: string }[];
   sequences: { id: number; name: string; loopStart: number; steps: { outputs: Output[]; ticks: number }[] }[];
-  bindings: { logicalButton: LogicalButton; sequenceId: number; setId: number; loop: boolean; cancelOnRelease: boolean; transform: OutputTransform }[];
+  bindings: {
+    logicalButton: LogicalButton; sequenceId: number; setId: number; loop: boolean; loopSync: boolean;
+    cancelOnRelease: boolean; transform: OutputTransform; composition: CompositionMode; suppressedOutputs: Output[];
+  }[];
   selectors: {
     id: number; name: string; incrementButton: LogicalButton; decrementButton: LogicalButton;
-    minimum: number; maximum: number; initial: number; wrap: boolean; neutralFrames: number;
+    minimum: number; maximum: number; initial: number; wrap: boolean; neutralFrames: number; occupiedOutputs: Output[];
     states: { value: number; name: string; outputs: Output[] }[];
   }[];
   metadata?: ProfileMetadata;
@@ -173,15 +176,25 @@ export function parseProfileJson(value: unknown): Profile {
   if (bindingValues.length > 256) fail("$.bindings", "256件以下である必要があります", "must contain no more than 256 items");
   const sequenceBindings = bindingValues.map((value, index) => {
     const path = `$.bindings[${index}]`;
-    const item = exactObject(value, path, ["logicalButton", "sequenceId", "setId", "loop", "cancelOnRelease", "transform"]);
+    const legacyFields = ["logicalButton", "sequenceId", "setId", "loop", "cancelOnRelease", "transform"] as const;
+    const item = exactObject(value, path, [...legacyFields, "loopSync", "composition", "suppressedOutputs"], legacyFields);
     const logicalButton = logicalButtonAt(item.logicalButton, `${path}.logicalButton`);
+    const sequenceId = integerAt(item.sequenceId, `${path}.sequenceId`, 0, 254);
+    const sequence = sequences.find((candidate) => candidate.id === sequenceId);
+    const composition = Object.hasOwn(item, "composition") ? enumAt(item.composition, `${path}.composition`, ["or", "autoLever", "custom"] as const) : "or";
+    const suppressionMask = Object.hasOwn(item, "suppressedOutputs")
+      ? maskFor(outputListAt(item.suppressedOutputs, `${path}.suppressedOutputs`))
+      : composition === "autoLever" && sequence ? automaticSuppressionMask(sequence) : 0;
     return {
       logicalId: LOGICAL_BUTTONS.indexOf(logicalButton),
-      sequenceId: integerAt(item.sequenceId, `${path}.sequenceId`, 0, 254),
+      sequenceId,
       setId: integerAt(item.setId, `${path}.setId`, 0, macroSetNames.length - 1),
       loop: booleanAt(item.loop, `${path}.loop`),
+      loopSync: Object.hasOwn(item, "loopSync") ? booleanAt(item.loopSync, `${path}.loopSync`) : false,
       cancelOnRelease: booleanAt(item.cancelOnRelease, `${path}.cancelOnRelease`),
       transform: enumAt(item.transform, `${path}.transform`, ["none", "flipHorizontal", "flipVertical", "flipBoth"] as const),
+      composition,
+      suppressionMask,
     };
   });
 
@@ -190,7 +203,8 @@ export function parseProfileJson(value: unknown): Profile {
   const selectorIds = new Set<number>();
   const selectors = selectorValues.map((value, index) => {
     const path = `$.selectors[${index}]`;
-    const item = exactObject(value, path, ["id", "name", "incrementButton", "decrementButton", "minimum", "maximum", "initial", "wrap", "neutralFrames", "states"]);
+    const legacyFields = ["id", "name", "incrementButton", "decrementButton", "minimum", "maximum", "initial", "wrap", "neutralFrames", "states"] as const;
+    const item = exactObject(value, path, [...legacyFields, "occupiedOutputs"], legacyFields);
     const id = integerAt(item.id, `${path}.id`, 0, 255);
     if (selectorIds.has(id)) fail(`${path}.id`, "重複しています", "is duplicated");
     selectorIds.add(id);
@@ -210,7 +224,9 @@ export function parseProfileJson(value: unknown): Profile {
     return {
       id, name: stringAt(item.name, `${path}.name`), increment: LOGICAL_BUTTONS.indexOf(increment), decrement: LOGICAL_BUTTONS.indexOf(decrement),
       min: minimum, max: maximum, initial: integerAt(item.initial, `${path}.initial`, minimum, maximum), wrap: booleanAt(item.wrap, `${path}.wrap`),
-      neutralFrames: integerAt(item.neutralFrames, `${path}.neutralFrames`, 0, 255), outputs: states.map((state) => state.mask), stateNames: states.map((state) => state.name),
+      neutralFrames: integerAt(item.neutralFrames, `${path}.neutralFrames`, 0, 255),
+      occupancyMask: Object.hasOwn(item, "occupiedOutputs") ? maskFor(outputListAt(item.occupiedOutputs, `${path}.occupiedOutputs`)) : 0,
+      outputs: states.map((state) => state.mask), stateNames: states.map((state) => state.name),
     };
   });
 
@@ -249,11 +265,13 @@ export function toProfileJson(profile: Profile): EasyArcadeProfileJson {
     })),
     bindings: [...profile.sequenceBindings].sort((a, b) => a.logicalId - b.logicalId || a.sequenceId - b.sequenceId || a.setId - b.setId).map((binding) => ({
       logicalButton: LOGICAL_BUTTONS[binding.logicalId], sequenceId: binding.sequenceId, setId: binding.setId,
-      loop: binding.loop, cancelOnRelease: binding.cancelOnRelease, transform: binding.transform,
+      loop: binding.loop, loopSync: binding.loopSync, cancelOnRelease: binding.cancelOnRelease, transform: binding.transform,
+      composition: binding.composition, suppressedOutputs: outputsFor(binding.suppressionMask),
     })),
     selectors: [...profile.selectors].sort((a, b) => a.id - b.id).map((selector) => ({
       id: selector.id, name: selector.name, incrementButton: LOGICAL_BUTTONS[selector.increment], decrementButton: LOGICAL_BUTTONS[selector.decrement],
       minimum: selector.min, maximum: selector.max, initial: selector.initial, wrap: selector.wrap, neutralFrames: selector.neutralFrames,
+      occupiedOutputs: outputsFor(selector.occupancyMask),
       states: selector.outputs.map((mask, index) => ({ value: selector.min + index, name: selector.stateNames[index], outputs: outputsFor(mask) })),
     })),
     ...(profile.metadata ? { metadata: stableValue(profile.metadata) as ProfileMetadata } : {}),

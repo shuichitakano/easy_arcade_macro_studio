@@ -21,11 +21,17 @@ export const OUTPUTS = [
 
 export const MAX_PROFILE_BYTES = 8192;
 export const MAX_SEQUENCE_BINDINGS = 256;
+export type BinaryProfileVersion = "1.0" | "1.1";
 
 export type SequenceStep = { mask: number; frames: number };
 export type MacroSequence = { id: number; name: string; loopStart: number; steps: SequenceStep[] };
 export type OutputTransform = "none" | "flipHorizontal" | "flipVertical" | "flipBoth";
-export type SequenceBinding = { logicalId: number; sequenceId: number; setId: number; loop: boolean; cancelOnRelease: boolean; transform: OutputTransform };
+export type CompositionMode = "or" | "autoLever" | "custom";
+export type SequenceBinding = {
+  logicalId: number; sequenceId: number; setId: number;
+  loop: boolean; loopSync: boolean; cancelOnRelease: boolean;
+  transform: OutputTransform; composition: CompositionMode; suppressionMask: number;
+};
 export type MacroSetConfig = { names: string[] };
 export type RapidTriggerType = "disabled" | "sync" | "front" | "back";
 export type RapidFireOverride = { override: boolean; triggerType: RapidTriggerType; divisor: number };
@@ -38,7 +44,7 @@ export type ProfileMetadata = Record<string, unknown> & {
 export type StateSelector = {
   id: number; name: string; increment: number; decrement: number;
   min: number; max: number; initial: number; wrap: boolean;
-  neutralFrames: number; outputs: number[]; stateNames: string[];
+  neutralFrames: number; occupancyMask: number; outputs: number[]; stateNames: string[];
 };
 export type Profile = {
   schemaVersion: 1;
@@ -66,6 +72,15 @@ export function localizeProfileMessage(message: string, locale: "ja" | "en") {
     "全シーケンスの合計は1024ステップまでです": "All sequences combined can contain up to 1,024 steps",
     "マクロ割り当ての論理ボタンが不正です": "A macro assignment has an invalid logical button",
     "マクロ割り当ての出力変換が不正です": "A macro assignment has an invalid output transform",
+    "マクロ割り当ての合成方式が不正です": "A macro assignment has an invalid composition mode",
+    "マクロ割り当ての抑制マスクが不正です": "A macro assignment has an invalid suppression mask",
+    "OR合成の抑制マスクは0である必要があります": "An OR assignment must have an empty suppression mask",
+    "自動合成の抑制マスクがシーケンスと一致しません": "An automatic assignment suppression mask does not match its sequence",
+    "ループ同期には先頭からの保持中反復が必要です": "Loop Sync requires repeat-while-held playback starting at the first step",
+    "ステートセレクタの占有マスクが重複しています": "State selector occupancy masks overlap",
+    "v1.0ではマクロの入力抑制を使用できません": "Macro input suppression cannot be exported as v1.0",
+    "v1.0ではループ同期を使用できません": "Loop Sync cannot be exported as v1.0",
+    "v1.0ではステートセレクタの占有マスクを使用できません": "State selector occupancy masks cannot be exported as v1.0",
     "マクロ割り当てのSet IDが不正です": "A macro assignment has an invalid Set ID",
     "同じセット、論理ボタン、マクロの割り当てが重複しています": "A set contains a duplicate logical-button and macro assignment",
     "AMAPファイルではありません": "This is not an AMAP file",
@@ -110,6 +125,7 @@ export function localizeProfileMessage(message: string, locale: "ja" | "en") {
     [/^(.+): ステート名と状態数が一致しません$/, "$1: the state-name count does not match the state count"],
     [/^(.+): 状態は64件までです$/, "$1: a selector can contain up to 64 states"],
     [/^(.+): 状態出力マスクが不正です$/, "$1: a state has an invalid output mask"],
+    [/^(.+): 占有マスクが不正です$/, "$1: the occupancy mask is invalid"],
   ];
   for (const [pattern, replacement] of replacements) if (pattern.test(message)) return message.replace(pattern, replacement);
   return message;
@@ -154,6 +170,14 @@ function transformFromFlags(flags: number): OutputTransform {
 }
 function transformFlags(transform: OutputTransform): number {
   return transform === "flipBoth" ? 12 : transform === "flipHorizontal" ? 4 : transform === "flipVertical" ? 8 : 0;
+}
+
+const P1_LEVER_MASK = (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5);
+const P2_LEVER_MASK = P1_LEVER_MASK << 12;
+
+export function automaticSuppressionMask(sequence: MacroSequence): number {
+  const used = sequence.steps.reduce((mask, step) => mask | step.mask, 0);
+  return (used & P1_LEVER_MASK ? P1_LEVER_MASK : 0) | (used & P2_LEVER_MASK ? P2_LEVER_MASK : 0);
 }
 
 function encodedString(value: string) { return Array.from(new TextEncoder().encode(value)); }
@@ -236,6 +260,14 @@ export function bindingsFor(profile: Profile, sequenceId: number) {
   return profile.sequenceBindings.filter((binding) => binding.sequenceId === sequenceId);
 }
 
+export function legacyExportIssues(profile: Profile): string[] {
+  const issues: string[] = [];
+  if (profile.sequenceBindings.some((binding) => binding.suppressionMask !== 0)) issues.push("v1.0ではマクロの入力抑制を使用できません");
+  if (profile.sequenceBindings.some((binding) => binding.loopSync)) issues.push("v1.0ではループ同期を使用できません");
+  if (profile.selectors.some((selector) => selector.occupancyMask !== 0)) issues.push("v1.0ではステートセレクタの占有マスクを使用できません");
+  return issues;
+}
+
 export function validateProfile(profile: Profile): string[] {
   const errors: string[] = [];
   const outputMask = profile.twoPlayerOutputs ? 0xffffff : 0x0fff;
@@ -268,15 +300,22 @@ export function validateProfile(profile: Profile): string[] {
   const bindingKeys = new Set<string>();
   for (const binding of profile.sequenceBindings) {
     const key = `${binding.setId}:${binding.logicalId}:${binding.sequenceId}`;
+    const sequence = profile.sequences.find((item) => item.id === binding.sequenceId);
     if (binding.logicalId < 0 || binding.logicalId >= LOGICAL_BUTTONS.length) errors.push("マクロ割り当ての論理ボタンが不正です");
     if (!ids.has(binding.sequenceId)) errors.push(`${LOGICAL_BUTTONS[binding.logicalId] ?? "不明"}が未定義のシーケンスを参照しています`);
     if (!(binding.transform === "none" || binding.transform === "flipHorizontal" || binding.transform === "flipVertical" || binding.transform === "flipBoth")) errors.push("マクロ割り当ての出力変換が不正です");
+    if (!(binding.composition === "or" || binding.composition === "autoLever" || binding.composition === "custom")) errors.push("マクロ割り当ての合成方式が不正です");
+    if (!Number.isInteger(binding.suppressionMask) || binding.suppressionMask < 0 || (binding.suppressionMask & ~outputMask)) errors.push("マクロ割り当ての抑制マスクが不正です");
+    if (binding.composition === "or" && binding.suppressionMask !== 0) errors.push("OR合成の抑制マスクは0である必要があります");
+    if (binding.composition === "autoLever" && sequence && binding.suppressionMask !== automaticSuppressionMask(sequence)) errors.push("自動合成の抑制マスクがシーケンスと一致しません");
+    if (typeof binding.loopSync !== "boolean" || (binding.loopSync && (!binding.loop || sequence?.loopStart !== 0))) errors.push("ループ同期には先頭からの保持中反復が必要です");
     if (!Number.isInteger(binding.setId) || binding.setId < 0 || binding.setId >= macroSetCount) errors.push("マクロ割り当てのSet IDが不正です");
     if (bindingKeys.has(key)) errors.push("同じセット、論理ボタン、マクロの割り当てが重複しています");
     bindingKeys.add(key);
   }
 
   const selectorIds = new Set<number>();
+  let occupiedOutputs = 0;
   for (const selector of profile.selectors) {
     if (selectorIds.has(selector.id)) errors.push(`セレクタID ${selector.id} が重複しています`);
     selectorIds.add(selector.id);
@@ -285,13 +324,20 @@ export function validateProfile(profile: Profile): string[] {
     if (!Array.isArray(selector.stateNames) || selector.stateNames.length !== selector.outputs.length || selector.stateNames.some((name) => typeof name !== "string")) errors.push(`${selector.name}: ステート名と状態数が一致しません`);
     if (selector.outputs.length > 64) errors.push(`${selector.name}: 状態は64件までです`);
     if (selector.outputs.some((mask) => !Number.isInteger(mask) || mask < 0 || (mask & ~outputMask))) errors.push(`${selector.name}: 状態出力マスクが不正です`);
+    if (!Number.isInteger(selector.occupancyMask) || selector.occupancyMask < 0 || (selector.occupancyMask & ~outputMask)) errors.push(`${selector.name}: 占有マスクが不正です`);
+    if (selector.occupancyMask & occupiedOutputs) errors.push("ステートセレクタの占有マスクが重複しています");
+    occupiedOutputs |= selector.occupancyMask;
   }
   return errors;
 }
 
-export function compileProfile(profile: Profile): Uint8Array {
+export function compileProfile(profile: Profile, version: BinaryProfileVersion = "1.1"): Uint8Array {
   const errors = validateProfile(profile);
   if (errors.length) throw new Error(errors[0]);
+  if (version === "1.0") {
+    const issues = legacyExportIssues(profile);
+    if (issues.length) throw new Error(issues[0]);
+  }
 
   const direct: number[] = [];
   profile.mappings.forEach((mask) => u24(direct, mask));
@@ -299,7 +345,15 @@ export function compileProfile(profile: Profile): Uint8Array {
   const bindings: number[] = [];
   const sortedBindings = [...profile.sequenceBindings].sort((a, b) => a.logicalId - b.logicalId || a.sequenceId - b.sequenceId || a.setId - b.setId);
   u16(bindings, sortedBindings.length);
-  sortedBindings.forEach((binding) => bindings.push(binding.logicalId, binding.sequenceId, binding.setId, (binding.loop ? 1 : 0) | (binding.cancelOnRelease ? 2 : 0) | transformFlags(binding.transform)));
+  if (version === "1.0") {
+    sortedBindings.forEach((binding) => bindings.push(binding.logicalId, binding.sequenceId, binding.setId, (binding.loop ? 1 : 0) | (binding.cancelOnRelease ? 2 : 0) | transformFlags(binding.transform)));
+  } else {
+    const compositionCodes: Record<CompositionMode, number> = { or: 0, autoLever: 1, custom: 2 };
+    sortedBindings.forEach((binding) => {
+      bindings.push(binding.logicalId, binding.sequenceId, binding.setId, (binding.loop ? 1 : 0) | (binding.cancelOnRelease ? 2 : 0) | transformFlags(binding.transform) | (binding.loopSync ? 16 : 0), compositionCodes[binding.composition]);
+      u24(bindings, binding.suppressionMask);
+    });
+  }
 
   const definitions: number[] = [profile.sequences.length];
   [...profile.sequences].sort((a, b) => a.id - b.id).forEach((seq) => {
@@ -311,6 +365,7 @@ export function compileProfile(profile: Profile): Uint8Array {
   [...profile.selectors].sort((a, b) => a.id - b.id).forEach((item) => {
     selectors.push(item.id, item.increment, item.decrement, item.min, item.max, item.initial, item.wrap ? 1 : 0, item.neutralFrames);
     selectors.push(item.outputs.length, 0);
+    if (version === "1.1") u24(selectors, item.occupancyMask);
     item.outputs.forEach((mask) => u24(selectors, mask));
   });
 
@@ -329,7 +384,7 @@ export function compileProfile(profile: Profile): Uint8Array {
   const total = 16 + payload.length;
   if (total > MAX_PROFILE_BYTES) throw new Error(`ファイルが8KBを超えます（${total} bytes）`);
   const result = new Uint8Array(total);
-  result.set([0x41, 0x4d, 0x41, 0x50, 1, 0, 16, 0]);
+  result.set([0x41, 0x4d, 0x41, 0x50, 1, version === "1.1" ? 1 : 0, 16, 0]);
   new DataView(result.buffer).setUint32(8, total, true);
   result.set(payload, 16);
   new DataView(result.buffer).setUint32(12, crc32(result.subarray(16)), true);
@@ -366,22 +421,31 @@ export function parseProfile(bytes: Uint8Array): Profile {
 
   const sequenceBindings: SequenceBinding[] = [];
   const countedBindingCount = bindingData.length >= 2 ? new DataView(bindingData.buffer, bindingData.byteOffset, bindingData.byteLength).getUint16(0, true) : -1;
-  const recordSize = bindingData.length === 2 + countedBindingCount * 4 ? 4 : bindingData.length === 2 + countedBindingCount * 3 ? 3 : bindingData.length === 2 + countedBindingCount * 5 ? 5 : 0;
+  const recordSize = bindingData.length === 2 + countedBindingCount * 8 ? 8 : bindingData.length === 2 + countedBindingCount * 4 ? 4 : bindingData.length === 2 + countedBindingCount * 3 ? 3 : bindingData.length === 2 + countedBindingCount * 5 ? 5 : 0;
+  const legacyBinding = (logicalId: number, sequenceId: number, setId: number, flags: number): SequenceBinding => ({
+    logicalId, sequenceId, setId, loop: !!(flags & 1), loopSync: false, cancelOnRelease: !!(flags & 2),
+    transform: transformFromFlags(flags), composition: "or", suppressionMask: 0,
+  });
   if (!recordSize && bindingData.length === 34) {
     for (let logicalId = 0; logicalId < 17; logicalId++) {
       const sequenceId = bindingData[logicalId * 2], flags = bindingData[logicalId * 2 + 1];
-      if (sequenceId !== 0xff) sequenceBindings.push({ logicalId, sequenceId, setId: 0, loop: !!(flags & 1), cancelOnRelease: !!(flags & 2), transform: transformFromFlags(flags) });
+      if (sequenceId !== 0xff) sequenceBindings.push(legacyBinding(logicalId, sequenceId, 0, flags));
     }
   } else {
     if (!recordSize) throw new Error("Sequence Bindingの長さが不正です");
     for (let i = 0, p = 2; i < countedBindingCount; i++, p += recordSize) {
       const logicalId = bindingData[p], sequenceId = bindingData[p + 1];
-      if (recordSize === 5) {
+      if (recordSize === 8) {
+        const setId = bindingData[p + 2], flags = bindingData[p + 3], compositionCode = bindingData[p + 4];
+        if (flags & ~31 || compositionCode > 2) throw new Error("Sequence Bindingの長さが不正です");
+        const compositions: CompositionMode[] = ["or", "autoLever", "custom"];
+        sequenceBindings.push({ logicalId, sequenceId, setId, loop: !!(flags & 1), loopSync: !!(flags & 16), cancelOnRelease: !!(flags & 2), transform: transformFromFlags(flags), composition: compositions[compositionCode], suppressionMask: read24(bindingData, p + 5) });
+      } else if (recordSize === 5) {
         const flags = bindingData[p + 2], setMask = bindingData[p + 3] | (bindingData[p + 4] << 8);
-        for (let setId = 0; setId < 16; setId++) if (setMask & (1 << setId)) sequenceBindings.push({ logicalId, sequenceId, setId, loop: !!(flags & 1), cancelOnRelease: !!(flags & 2), transform: transformFromFlags(flags) });
+        for (let setId = 0; setId < 16; setId++) if (setMask & (1 << setId)) sequenceBindings.push(legacyBinding(logicalId, sequenceId, setId, flags));
       } else {
         const setId = recordSize === 4 ? bindingData[p + 2] : 0, flags = bindingData[p + recordSize - 1];
-        sequenceBindings.push({ logicalId, sequenceId, setId, loop: !!(flags & 1), cancelOnRelease: !!(flags & 2), transform: transformFromFlags(flags) });
+        sequenceBindings.push(legacyBinding(logicalId, sequenceId, setId, flags));
       }
     }
   }
@@ -424,26 +488,29 @@ export function parseProfile(bytes: Uint8Array): Profile {
 
   let selectors: StateSelector[] = [];
   if (selectorData) {
-    const parseSelectors = (headerSize: 10 | 12): StateSelector[] => {
+    const parseSelectors = (headerSize: 10 | 12 | 13): StateSelector[] => {
       const parsed: StateSelector[] = [];
       const dv = new DataView(selectorData.buffer, selectorData.byteOffset, selectorData.byteLength);
       let p = 1;
       for (let n = 0; n < selectorData[0]; n++) {
         if (p + headerSize > selectorData.length) throw new Error("セレクタ定義が途中で終了しています");
         const id = selectorData[p], increment = selectorData[p + 1], decrement = selectorData[p + 2], min = selectorData[p + 3], max = selectorData[p + 4], initial = selectorData[p + 5];
-        const wrap = !!(selectorData[p + 6] & 1), neutralFrames = selectorData[p + 7], count = selectorData[p + headerSize - 2];
+        const wrap = !!(selectorData[p + 6] & 1), neutralFrames = selectorData[p + 7], count = selectorData[p + (headerSize === 12 ? 10 : 8)];
+        const occupancyMask = headerSize === 13 ? read24(selectorData, p + 10) : 0;
         p += headerSize;
         const outputs: number[] = [];
         for (let i = 0; i < count; i++, p += outputWidth) {
           if (p + outputWidth > selectorData.length) throw new Error("状態出力が途中で終了しています");
           outputs.push(outputWidth === 3 ? read24(selectorData, p) : dv.getUint16(p, true));
         }
-        parsed.push({ id, name: `Selector ${id + 1}`, increment, decrement, min, max, initial, wrap, neutralFrames, outputs, stateNames: outputs.map((_, index) => String(min + index)) });
+        parsed.push({ id, name: `Selector ${id + 1}`, increment, decrement, min, max, initial, wrap, neutralFrames, occupancyMask, outputs, stateNames: outputs.map((_, index) => String(min + index)) });
       }
       if (p !== selectorData.length) throw new Error("セレクタ定義に余剰データがあります");
       return parsed;
     };
-    try { selectors = parseSelectors(10); } catch { selectors = parseSelectors(12); }
+    try { selectors = parseSelectors(13); } catch {
+      try { selectors = parseSelectors(10); } catch { selectors = parseSelectors(12); }
+    }
   }
 
   const rapidFire = inheritedRapidFire();
@@ -491,12 +558,15 @@ export function parseProfile(bytes: Uint8Array): Profile {
   return profile;
 }
 
-type LegacyBinding = { logicalId?: number; sequenceId: number | null; setId?: number; loop: boolean; cancelOnRelease: boolean; delayFrames?: number; transform?: OutputTransform; setMask?: number };
+type LegacyBinding = {
+  logicalId?: number; sequenceId: number | null; setId?: number; loop: boolean; loopSync?: boolean; cancelOnRelease: boolean;
+  delayFrames?: number; transform?: OutputTransform; setMask?: number; composition?: CompositionMode; suppressionMask?: number;
+};
 type LegacySequence = MacroSequence & { frameStep?: number; trigger?: number; loop?: boolean; cancelOnRelease?: boolean };
 
 export function normalizeProfile(candidate: Partial<Profile> & { sequenceBindings?: LegacyBinding[]; sequences?: LegacySequence[] }): Profile {
   const base = createDefaultProfile();
-  const candidateSequences = candidate.sequences ?? base.sequences;
+  const candidateSequences: LegacySequence[] = candidate.sequences ?? base.sequences;
   const legacyFrameStep = candidateSequences.find((sequence) => Number.isInteger(sequence.frameStep))?.frameStep;
   const sequences: MacroSequence[] = candidateSequences.map((sequence) => ({
     id: sequence.id,
@@ -507,7 +577,13 @@ export function normalizeProfile(candidate: Partial<Profile> & { sequenceBinding
   let sequenceBindings: SequenceBinding[] = [];
   function migrateBinding(binding: LegacyBinding, logicalId: number): SequenceBinding[] {
     if (binding.sequenceId === null) return [];
-    const common = { logicalId, sequenceId: binding.sequenceId, loop: binding.loop, cancelOnRelease: binding.cancelOnRelease, transform: binding.transform ?? "none" as OutputTransform };
+    const sequence = sequences.find((item) => item.id === binding.sequenceId);
+    const composition = binding.composition ?? "or";
+    const common = {
+      logicalId, sequenceId: binding.sequenceId, loop: binding.loop, loopSync: binding.loopSync === true,
+      cancelOnRelease: binding.cancelOnRelease, transform: binding.transform ?? "none" as OutputTransform, composition,
+      suppressionMask: composition === "or" ? 0 : composition === "autoLever" && sequence ? automaticSuppressionMask(sequence) : binding.suppressionMask ?? 0,
+    };
     if (typeof binding.setId === "number") return [{ ...common, setId: binding.setId }];
     const setMask = binding.setMask ?? 1;
     return Array.from({ length: 16 }, (_, setId) => setId).filter((setId) => setMask & (1 << setId)).map((setId) => ({ ...common, setId }));
@@ -520,7 +596,7 @@ export function normalizeProfile(candidate: Partial<Profile> & { sequenceBinding
       candidate.sequenceBindings.forEach((binding, logicalId) => sequenceBindings.push(...migrateBinding(binding, logicalId)));
     }
   } else {
-    sequences.forEach((sequence) => { if (typeof sequence.trigger === "number") sequenceBindings.push({ logicalId: sequence.trigger, sequenceId: sequence.id, setId: 0, loop: !!sequence.loop, cancelOnRelease: !!sequence.cancelOnRelease, transform: "none" }); });
+    candidateSequences.forEach((sequence) => { if (typeof sequence.trigger === "number") sequenceBindings.push({ logicalId: sequence.trigger, sequenceId: sequence.id, setId: 0, loop: !!sequence.loop, loopSync: false, cancelOnRelease: !!sequence.cancelOnRelease, transform: "none", composition: "or", suppressionMask: 0 }); });
   }
   const inheritedRapid = inheritedRapidFire();
   const rapidFire = Array.isArray(candidate.rapidFire)
@@ -535,7 +611,7 @@ export function normalizeProfile(candidate: Partial<Profile> & { sequenceBinding
   const selectors = (candidate.selectors ?? base.selectors).map((selector) => ({
     id: selector.id, name: selector.name, increment: selector.increment, decrement: selector.decrement,
     min: selector.min, max: selector.max, initial: selector.initial, wrap: selector.wrap,
-    neutralFrames: selector.neutralFrames, outputs: [...selector.outputs],
+    neutralFrames: selector.neutralFrames, occupancyMask: selector.occupancyMask ?? 0, outputs: [...selector.outputs],
     stateNames: selector.outputs.map((_, index) => Array.isArray(selector.stateNames) && typeof selector.stateNames[index] === "string" ? selector.stateNames[index] : String(selector.min + index)),
   }));
   return {

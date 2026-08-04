@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compileProfile, createDefaultProfile, EDITOR_LOGICAL_BUTTONS, LOGICAL_BUTTONS, parseProfile } from "../app/profile";
+import { automaticSuppressionMask, compileProfile, createDefaultProfile, EDITOR_LOGICAL_BUTTONS, LOGICAL_BUTTONS, parseProfile } from "../app/profile";
 import { parseProfileJsonText, ProfileJsonError, serializeProfileJson, toProfileJson } from "../app/profileJson";
 import { uniqueDownloadFileName } from "../app/downloadName";
 
@@ -12,8 +12,8 @@ function sampleProfile() {
   profile.frameStep = 2;
   profile.macroSets.names = ["Ryu", "Ken"];
   profile.sequences = [{ id: 3, name: "Hadoken", loopStart: 0, steps: [{ mask: (1 << 3), frames: 1 }, { mask: (1 << 3) | (1 << 5), frames: 2 }, { mask: (1 << 5) | (1 << 6), frames: 1 }] }];
-  profile.sequenceBindings = [{ logicalId: 12, sequenceId: 3, setId: 0, loop: false, cancelOnRelease: false, transform: "none" }];
-  profile.selectors = [{ id: 1, name: "GEAR", increment: 13, decrement: 14, min: 0, max: 1, initial: 0, wrap: true, neutralFrames: 1, outputs: [0, 1 << 6], stateNames: ["LOW", "HIGH"] }];
+  profile.sequenceBindings = [{ logicalId: 12, sequenceId: 3, setId: 0, loop: false, loopSync: false, cancelOnRelease: false, transform: "none", composition: "autoLever", suppressionMask: automaticSuppressionMask(profile.sequences[0]) }];
+  profile.selectors = [{ id: 1, name: "GEAR", increment: 13, decrement: 14, min: 0, max: 1, initial: 0, wrap: true, neutralFrames: 1, occupancyMask: 1 << 6, outputs: [0, 1 << 6], stateNames: ["LOW", "HIGH"] }];
   profile.metadata = { generator: "test", sources: ["https://example.com/moves"], verification: "editor-validated", extra: { z: 1, a: 2 } };
   return profile;
 }
@@ -74,7 +74,7 @@ function asPrototype16Bit(bytes: Uint8Array) {
       let position = 1;
       for (let selector = 0; selector < source[0]; selector++) {
         const count = source[position + 8];
-        converted.push(...source.subarray(position, position + 10)); position += 10;
+        converted.push(...source.subarray(position, position + 10)); position += 13;
         for (let state = 0; state < count; state++, position += 3) converted.push(source[position], source[position + 1]);
       }
     } else if (type === 0x05) converted.push(...source.subarray(0, 54));
@@ -90,6 +90,37 @@ function asPrototype16Bit(bytes: Uint8Array) {
   return prototype;
 }
 
+function asPreCompositionBinary(bytes: Uint8Array) {
+  const sourceView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const payload: number[] = [];
+  for (let cursor = 16; cursor < bytes.length;) {
+    const type = bytes[cursor], length = sourceView.getUint16(cursor + 2, true);
+    const source = bytes.subarray(cursor + 4, cursor + 4 + length);
+    const converted: number[] = [];
+    if (type === 0x02) {
+      converted.push(source[0], source[1]);
+      const count = source[0] | (source[1] << 8);
+      for (let index = 0; index < count; index++) converted.push(...source.subarray(2 + index * 8, 2 + index * 8 + 4));
+    } else if (type === 0x04) {
+      converted.push(source[0]);
+      let position = 1;
+      for (let selector = 0; selector < source[0]; selector++) {
+        const count = source[position + 8];
+        converted.push(...source.subarray(position, position + 10)); position += 13;
+        converted.push(...source.subarray(position, position + count * 3)); position += count * 3;
+      }
+    } else converted.push(...source);
+    payload.push(type, 0, converted.length & 0xff, converted.length >>> 8, ...converted);
+    cursor += 4 + length;
+  }
+  const legacy = new Uint8Array(16 + payload.length);
+  legacy.set(bytes.subarray(0, 16)); legacy.set(payload, 16);
+  const view = new DataView(legacy.buffer);
+  view.setUint32(8, legacy.length, true);
+  view.setUint32(12, crc32(legacy.subarray(16)), true);
+  return legacy;
+}
+
 test("Profile JSON round-trips every executable setting", () => {
   const source = sampleProfile();
   const json = serializeProfileJson(source);
@@ -97,6 +128,65 @@ test("Profile JSON round-trips every executable setting", () => {
   assert.deepEqual(parsed, source);
   assert.deepEqual(compileProfile(parsed), compileProfile(source));
   assert.equal(serializeProfileJson(parsed), json);
+});
+
+test("legacy Profile JSON defaults to OR composition without occupancy", () => {
+  const json = toProfileJson(sampleProfile());
+  const binding = json.bindings[0] as unknown as Record<string, unknown>;
+  delete binding.loopSync; delete binding.composition; delete binding.suppressedOutputs;
+  delete (json.selectors[0] as unknown as Record<string, unknown>).occupiedOutputs;
+  const parsed = parseProfileJsonText(JSON.stringify(json));
+  assert.deepEqual(parsed.sequenceBindings[0], { logicalId: 12, sequenceId: 3, setId: 0, loop: false, loopSync: false, cancelOnRelease: false, transform: "none", composition: "or", suppressionMask: 0 });
+  assert.equal(parsed.selectors[0].occupancyMask, 0);
+});
+
+test("Loop Sync and masks round-trip through the binary format", () => {
+  const source = sampleProfile();
+  source.sequenceBindings[0].loop = true;
+  source.sequenceBindings[0].loopSync = true;
+  source.sequenceBindings[0].composition = "custom";
+  source.sequenceBindings[0].suppressionMask = (1 << 2) | (1 << 6);
+  source.selectors[0].occupancyMask = (1 << 7) | (1 << 8);
+  const bytes = compileProfile(source);
+  assert.equal(bytes[5], 1);
+  assert.deepEqual(parseProfile(bytes), withoutMetadata(source));
+});
+
+test("v1.0 export remains available for compatible profiles", () => {
+  const source = sampleProfile();
+  source.sequenceBindings[0].composition = "or";
+  source.sequenceBindings[0].suppressionMask = 0;
+  source.selectors[0].occupancyMask = 0;
+  const bytes = compileProfile(source, "1.0");
+  assert.equal(bytes[5], 0);
+  assert.deepEqual(parseProfile(bytes), withoutMetadata(source));
+});
+
+test("v1.0 export never drops new behavior silently", () => {
+  const source = sampleProfile();
+  assert.throws(() => compileProfile(source, "1.0"), /入力抑制/);
+  source.sequenceBindings[0].composition = "or"; source.sequenceBindings[0].suppressionMask = 0; source.sequenceBindings[0].loop = true; source.sequenceBindings[0].loopSync = true;
+  assert.throws(() => compileProfile(source, "1.0"), /ループ同期/);
+  source.sequenceBindings[0].loopSync = false; source.selectors[0].occupancyMask = 1;
+  assert.throws(() => compileProfile(source, "1.0"), /占有マスク/);
+});
+
+test("pre-composition binary records migrate safely", () => {
+  const source = sampleProfile();
+  const restored = parseProfile(asPreCompositionBinary(compileProfile(source)));
+  const expected = withoutMetadata(source);
+  expected.sequenceBindings[0] = { ...expected.sequenceBindings[0], loopSync: false, composition: "or", suppressionMask: 0 };
+  expected.selectors[0].occupancyMask = 0;
+  assert.deepEqual(restored, expected);
+});
+
+test("Loop Sync requires a full sequence loop", () => {
+  const source = sampleProfile();
+  source.sequenceBindings[0].loopSync = true;
+  assert.throws(() => compileProfile(source), /ループ同期/);
+  source.sequenceBindings[0].loop = true;
+  source.sequences[0].loopStart = 1;
+  assert.throws(() => compileProfile(source), /ループ同期/);
 });
 
 test("Profile JSON uses named buttons and outputs", () => {
@@ -175,6 +265,7 @@ test("2P outputs round-trip through Profile JSON and 24-bit .eamacro masks", () 
   source.twoPlayerOutputs = true;
   source.mappings[12] = (1 << 6) | (1 << 18);
   source.sequences[0].steps[0].mask = (1 << 3) | (1 << 4) | (1 << 6) | (1 << 17) | (1 << 18);
+  source.sequenceBindings[0].suppressionMask = automaticSuppressionMask(source.sequences[0]);
   source.selectors[0].outputs[1] = (1 << 6) | (1 << 18);
 
   const json = serializeProfileJson(source);
@@ -199,7 +290,9 @@ test("2P outputs round-trip through Profile JSON and 24-bit .eamacro masks", () 
 test("prototype 16-bit output masks remain importable", () => {
   const source = sampleProfile();
   const restored = parseProfile(asPrototype16Bit(compileProfile(source)));
-  assert.deepEqual(restored, withoutMetadata(source));
+  const expected = withoutMetadata(source);
+  expected.selectors[0].occupancyMask = 0;
+  assert.deepEqual(restored, expected);
 });
 
 test("legacy prototype JSON metadata remains importable", () => {

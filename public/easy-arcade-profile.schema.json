@@ -68,8 +68,11 @@
           "sequenceId": { "type": "integer", "minimum": 0, "maximum": 254 },
           "setId": { "type": "integer", "minimum": 0, "maximum": 15 },
           "loop": { "type": "boolean" },
+          "loopSync": { "type": "boolean", "default": false },
           "cancelOnRelease": { "type": "boolean" },
-          "transform": { "enum": ["none", "flipHorizontal", "flipVertical", "flipBoth"] }
+          "transform": { "enum": ["none", "flipHorizontal", "flipVertical", "flipBoth"] },
+          "composition": { "enum": ["or", "autoLever", "custom"], "default": "or" },
+          "suppressedOutputs": { "$ref": "#/$defs/outputList" }
         }
       }
     },
@@ -90,6 +93,7 @@
           "initial": { "type": "integer", "minimum": 0, "maximum": 255 },
           "wrap": { "type": "boolean" },
           "neutralFrames": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "occupiedOutputs": { "$ref": "#/$defs/outputList" },
           "states": {
             "type": "array",
             "minItems": 1,
