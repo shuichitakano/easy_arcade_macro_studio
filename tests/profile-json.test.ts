@@ -221,7 +221,20 @@ test("v1.0 export remains available for compatible profiles", () => {
   source.selectors[0].occupancyMask = 0;
   const bytes = compileProfile(source, "1.0");
   assert.equal(bytes[5], 0);
-  assert.deepEqual(parseProfile(bytes), withoutMetadata(source));
+  const imported = withoutMetadata(source);
+  imported.sequences[0].composition = "autoLever";
+  imported.sequences[0].suppressionMask = automaticSuppressionMask(imported.sequences[0]);
+  assert.deepEqual(parseProfile(bytes), imported);
+});
+
+test("v1.0 imports migrate every macro to automatic composition", () => {
+  const source = sampleProfile();
+  source.sequences[0].composition = "or";
+  source.sequences[0].suppressionMask = 0;
+  source.selectors[0].occupancyMask = 0;
+  const imported = parseProfile(compileProfile(source, "1.0"));
+  assert.equal(imported.sequences[0].composition, "autoLever");
+  assert.equal(imported.sequences[0].suppressionMask, automaticSuppressionMask(imported.sequences[0]));
 });
 
 test("v1.0 export never drops new behavior silently", () => {

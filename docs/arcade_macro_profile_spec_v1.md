@@ -525,7 +525,7 @@ UIはバイナリのセクション配置をそのまま見せず、次の責務
 
 初期試作エディタが生成した17個または18個の論理ボタンを持つDirect MappingおよびRapid Fire Overridesも、PCエディタは移行読み込みしてよい。存在しない論理ボタンIDは既定値で補い、新規保存は常に32個のレコードを出力する。EASY ARCADE本体はこれらの試作形式へ対応する必要がない。
 
-初期試作エディタおよび正式v1.0が生成した4-byte Sequence BindingはLoop Sync無効として読み込み、4-byte Sequence Definitionは合成方式OR、抑制マスク0として読み込む。Occupancy Maskを持たないState Selectorsは占有マスク0として読み込み、従来のOR合成動作を維持する。通常保存は8-byte Sequence Definition、Loop Sync対応4-byte Sequence Binding、Occupancy Mask付きState Selectorsを持つv1.1とし、明示的な旧形式エクスポートだけが正式v1.0を生成する。
+初期試作エディタおよび正式v1.0が生成した4-byte Sequence BindingはLoop Sync無効として読み込む。正式v1.0の4-byte Sequence DefinitionをPCエディタへ読み込む際は、合成方式を自動へ移行し、シーケンス全体から抑制マスクを算出する。これは編集時の移行規則であり、v1.0を直接利用する実機のOR動作は変更しない。Occupancy Maskを持たないState Selectorsは占有マスク0として読み込む。通常保存は8-byte Sequence Definition、Loop Sync対応4-byte Sequence Binding、Occupancy Mask付きState Selectorsを持つv1.1とし、明示的な旧形式エクスポートだけが正式v1.0を生成する。
 
 オンライン共有では、サーバー内部の保存形式としてProfile JSONまたは同等の正規化済みデータを使用できる。共有サイトからダウンロードする実機向け成果物は、検証済みProfile JSONからサーバーまたはエディタが生成した`.eamacro`とする。REST APIやMCPを追加する場合も、独自のAI専用形式を設けず、Profile JSONを共通の入出力形式とする。
 

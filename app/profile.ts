@@ -500,7 +500,12 @@ export function parseProfile(bytes: Uint8Array): Profile {
           if (p + stepSize > defs.length) throw new Error("ステップが途中で終了しています");
           steps.push({ mask: outputWidth === 3 ? read24(defs, p) : dv.getUint16(p, true), frames: dv.getUint16(p + outputWidth, true) });
         }
-        parsed.push({ id, name: `Macro ${id + 1}`, loopStart, composition, suppressionMask, steps });
+        const sequence: MacroSequence = { id, name: `Macro ${id + 1}`, loopStart, composition, suppressionMask, steps };
+        if (minor === 0 && headerSize === 4) {
+          sequence.composition = "autoLever";
+          sequence.suppressionMask = automaticSuppressionMask(sequence);
+        }
+        parsed.push(sequence);
       }
       if (p !== defs.length) throw new Error("シーケンス定義に余剰データがあります");
       return parsed;
