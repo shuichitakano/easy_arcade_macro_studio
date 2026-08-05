@@ -16,7 +16,7 @@ const content = {
     concepts: [
       { title: "物理入力・論理ボタン・基板出力", paragraphs: ["コントローラー上の物理ボタンは、まずEASY ARCADE本体の設定で論理ボタンへ変換されます。このエディタが扱うのは、その後の「論理ボタンからゲーム基板出力への変換」です。どの物理ボタンをAやBとして扱うかは、本体側で設定します。"] },
       { title: "論理ボタンと出力", paragraphs: ["通常の編集画面で扱う論理ボタンはCOIN、START、方向、A〜Jの16個です。ゲーム基板出力は1P側と2P側にそれぞれCOIN、START、方向、A〜Fの12個があります。G〜Jは直接対応する基板出力を持たず、マクロやステートセレクタの操作に使える4個の仮想ボタンです。ファイル形式には将来拡張用として32個までの論理ボタンIDが確保されています。", "1つの論理ボタンから複数の基板出力を同時に出せます。たとえば論理ボタンGを、1P側のA＋Bや2P側のAへ割り当てられます。2P出力はプロファイル上部の2P設定を有効にした時だけ編集画面へ表示されます。"] },
-      { title: "直接マッピングとマクロ", paragraphs: ["直接マッピングは、論理ボタンを押している間、割り当てた基板出力をそのまま出します。マクロは、ボタンをきっかけにtick単位の出力シーケンスを再生します。マクロの合成方式は、既存出力へ加えるOR、レバー入力を自動的に抑制する自動、任意の出力を抑制するカスタムから選べます。", "プロファイル全体で「1 tickを何フレームにするか」を設定できます。たとえば2なら、すべてのマクロで1 tickを2フレーム出力してから次へ進みます。", "1つのマクロを複数の論理ボタンへ割り当てることも、1つの論理ボタンから複数のマクロを同時に起動することもできます。左右・上下反転や再生方法は、キー割り当てごとに設定されます。シーケンス要約では、DOWN＋LEFT＋A＋Bのような同時出力を↙＋A＋Bとまとめて確認できます。"] },
+      { title: "直接マッピングとマクロ", paragraphs: ["直接マッピングは、論理ボタンを押している間、割り当てた基板出力をそのまま出します。マクロは、ボタンをきっかけにtick単位の出力シーケンスを再生します。マクロが直接入力や同時実行中のマクロとどう重なるかは、マクロごとの「合成」で設定します。", "プロファイル全体で「1 tickを何フレームにするか」を設定できます。たとえば2なら、すべてのマクロで1 tickを2フレーム出力してから次へ進みます。", "1つのマクロを複数の論理ボタンへ割り当てることも、1つの論理ボタンから複数のマクロを同時に起動することもできます。左右・上下反転や再生方法は、キー割り当てごとに設定されます。シーケンス要約では、DOWN＋LEFT＋A＋Bのような同時出力を↙＋A＋Bとまとめて確認できます。"] },
       { title: "マクロセット", paragraphs: ["マクロ定義とキー割り当ては別に保存されます。マクロセットを切り替えると、マクロ定義を作り直さずに、どの論理ボタンからどのマクロを起動するかをセットごとに変えられます。", "たとえば使用キャラクターごとに必要なマクロが異なるゲームでは、Set 0をキャラクターA用、Set 1をキャラクターB用として、同じ論理ボタンへ別のマクロを割り当てられます。同じマクロを複数セットから参照することもできます。直接マッピング、連射、ステートセレクタはセット間で共通です。"] },
       { title: "連射", paragraphs: ["連射設定は論理ボタンごとに、本体設定を使うか、プロファイルで上書きするかを選びます。上書き時は連射無効・同期・表・裏と、VSync周期を基準にした分周比を指定します。VSyncが60Hzの場合、分周比2は30連、3は20連です。"] },
       { title: "ステートセレクタ", paragraphs: ["ステートセレクタは、増加・減少ボタンで状態を切り替え、その状態に対応する基板出力を保持します。たとえばGEARというセレクタにLOW、MID、HIGHを作り、状態ごとに異なる出力を持たせられます。占有マスクを指定すると、直接入力やマクロより優先してその出力を管理できます。"] },
@@ -50,6 +50,16 @@ const content = {
     limitsNote: "各項目の最大値をすべて同時に使えるとは限りません。最終的には.eamacroファイル全体が8192 bytes以内である必要があり、超過した場合は書き出せません。",
     schemaTitle: "Profile JSON Schema",
     schemaLead: "AIや外部ツールでProfile JSONを作成するときは、次のJSON Schemaを参照してください。",
+    composition: {
+      title: "マクロの合成",
+      lead: "合成は、マクロ実行中に、手で押している入力や先に動いているマクロを残すかどうかの設定です。たとえば↙を押したまま、レバー操作を含むマクロを起動する場合を考えます。",
+      modes: [
+        { name: "OR", description: "既存の出力を何も消さず、マクロの出力を加えます。", example: "↙を押したままマクロが→を出すと、基板には↓＋←＋→が同時に届きます。意図的な同時入力を作る場合や、ボタンだけのマクロに向きます。" },
+        { name: "自動", description: "マクロの全ステップを調べ、1Pの方向を1つでも使っていれば、実行中は1Pの↑↓←→をすべて抑制します。2Pの方向は別に判定します。方向以外のボタンは抑制しません。", example: "↙を押したまま↓↘→＋Aのマクロを起動すると、手で入れている↙はマクロの間だけ無視され、マクロのレバー方向がそのまま届きます。通常のコマンド入力にはこれが基本です。" },
+        { name: "カスタム", description: "抑制する出力を自分で指定します。マクロ自身が使わない方向やボタンも指定できます。", example: "レバー4方向に加えてAとBも抑制する、LEFTだけを抑制する、といった特殊な合成を作れます。" },
+      ],
+      note: "抑制はマクロの開始から終了まで続き、何も出力しないステップでも解除されません。複数のマクロが重なった場合、後から起動したマクロは、抑制対象にした直接入力と先に起動したマクロ出力を置き換えます。抑制対象外の出力はORで残ります。",
+    },
     loopSync: {
       eyebrow: "高度な使い方",
       title: "複数の連射パターンを同期する",
@@ -70,7 +80,7 @@ const content = {
     concepts: [
       { title: "Physical input, logical buttons, and outputs", paragraphs: ["Physical controller buttons are first mapped to logical buttons by the EASY ARCADE hardware. This editor handles the next stage: mapping logical buttons to game board outputs. Choose which physical button acts as A, B, and so on in the hardware settings."] },
       { title: "Logical buttons and outputs", paragraphs: ["The standard editor exposes 16 logical buttons: COIN, START, four directions, and A–J. Player 1 and Player 2 each have 12 game board outputs: COIN, START, four directions, and A–F. G–J have no direct board output and provide four virtual inputs for macros and state selectors. The file format reserves up to 32 logical-button IDs for future expansion.", "One logical button can activate several outputs at once. For example, logical button G can produce Player 1 A+B and Player 2 A. Player 2 outputs appear in the editors only when the 2P profile setting is enabled."] },
-      { title: "Direct mapping and macros", paragraphs: ["A direct mapping holds its assigned outputs while the logical button is held. A macro starts an output sequence measured in ticks. Its composition can add to existing outputs with OR, automatically suppress lever input, or suppress a custom set of outputs.", "The profile defines how many frames make up one tick. With a value of 2, every macro holds each tick for two frames before advancing.", "A macro can be assigned to several logical buttons, and one logical button can start several macros at once. Horizontal and vertical mirroring and playback behavior are configured per assignment. The sequence summary condenses simultaneous outputs such as DOWN+LEFT+A+B into ↙+A+B."] },
+      { title: "Direct mapping and macros", paragraphs: ["A direct mapping holds its assigned outputs while the logical button is held. A macro starts an output sequence measured in ticks. Each macro's Composition setting controls how it combines with direct input and other macros already running.", "The profile defines how many frames make up one tick. With a value of 2, every macro holds each tick for two frames before advancing.", "A macro can be assigned to several logical buttons, and one logical button can start several macros at once. Horizontal and vertical mirroring and playback behavior are configured per assignment. The sequence summary condenses simultaneous outputs such as DOWN+LEFT+A+B into ↙+A+B."] },
       { title: "Macro sets", paragraphs: ["Macro definitions and button assignments are stored separately. Switching macro sets changes which button starts which macro without duplicating the macro definitions.", "For example, Set 0 can contain assignments for Character A and Set 1 for Character B. The same logical button can start different macros in each set, and one macro can be referenced by several sets. Direct mappings, rapid fire, and state selectors are shared by all sets."] },
       { title: "Rapid fire", paragraphs: ["For each logical button, choose whether to inherit the hardware rapid-fire setting or override it in the profile. An override specifies Disabled, Sync, Front, or Back and a divisor based on the VSync period. At 60 Hz, divisor 2 produces 30 presses per second and divisor 3 produces 20."] },
       { title: "State selectors", paragraphs: ["A state selector changes state with increment and decrement buttons and holds the output assigned to that state. For example, a GEAR selector can have LOW, MID, and HIGH states with different outputs. Its occupancy mask can take control of selected outputs ahead of direct input and macros."] },
@@ -104,6 +114,16 @@ const content = {
     limitsNote: "The maximum for every item cannot necessarily be used at the same time. The final .eamacro file must fit within 8,192 bytes; export is refused if it exceeds that size.",
     schemaTitle: "Profile JSON Schema",
     schemaLead: "Use this JSON Schema when creating Profile JSON with AI or external tools.",
+    composition: {
+      title: "Macro composition",
+      lead: "Composition decides whether a running macro preserves input you are holding and output from macros that started earlier. For example, consider starting a lever macro while holding ↙.",
+      modes: [
+        { name: "OR", description: "Preserves every existing output and adds the macro output.", example: "If the macro outputs → while you hold ↙, the board receives ↓+←+→ simultaneously. Use this for intentional simultaneous inputs or simple button-only macros." },
+        { name: "Automatic", description: "Checks every step in the macro. If any Player 1 direction is used, all four Player 1 directions are suppressed for the entire run. Player 2 is checked separately. Non-direction buttons are never suppressed.", example: "Start a ↓↘→+A macro while holding ↙ and the held ↙ is ignored until the macro ends, allowing its lever motion through unchanged. This is the normal choice for command-input macros." },
+        { name: "Custom", description: "Lets you choose exactly which outputs to suppress, including directions or buttons the macro does not output itself.", example: "You can suppress all four directions plus A and B, or suppress only LEFT, for specialized combinations." },
+      ],
+      note: "Suppression remains active from macro start to finish, including steps that currently output nothing. When macros overlap, a later macro replaces direct input and earlier macro output only on the outputs it suppresses. Everything else remains combined with OR.",
+    },
     loopSync: {
       eyebrow: "Advanced technique",
       title: "Synchronize multiple rapid-fire patterns",
@@ -126,7 +146,7 @@ export function HelpContent() {
     <header className="help-topbar"><div className="help-brand"><Image className="brand-icon" src="/favicon.svg" alt="" width={28} height={28} /><strong>EASY ARCADE Macro Studio</strong></div><div className="help-actions"><LanguageSwitch /><Link href="/">{page.back}</Link></div></header>
     <article className="help-content">
       <h1>{page.conceptsTitle}</h1><p className="help-lead">{page.conceptsLead}</p>
-      {page.concepts.map((section, index) => <section className="help-section" key={section.title}><h2>{section.title}</h2>{index === 0 && <div className="concept-flow" aria-label={page.flowLabel}><span>{page.flow[0]}</span><b>→</b><span>{page.flow[1]}</span><b>→</b><span>{page.flow[2]}</span></div>}{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
+      {page.concepts.map((section, index) => <div key={section.title}><section className="help-section"><h2>{section.title}</h2>{index === 0 && <div className="concept-flow" aria-label={page.flowLabel}><span>{page.flow[0]}</span><b>→</b><span>{page.flow[1]}</span><b>→</b><span>{page.flow[2]}</span></div>}{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>{index === 2 && <section className="help-section composition-reference" id="composition"><h2>{page.composition.title}</h2><p>{page.composition.lead}</p><div className="composition-modes">{page.composition.modes.map((mode) => <article key={mode.name}><h3>{mode.name}</h3><p>{mode.description}</p><p className="composition-example">{mode.example}</p></article>)}</div><p className="composition-note">{page.composition.note}</p></section>}</div>)}
       <h1 className="help-subheading">{page.editorsTitle}</h1><p className="help-lead">{page.editorsLead}</p>
       {page.editors.map((section) => <section className="help-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
       <h1 className="help-subheading">{page.limitsTitle}</h1><p className="help-lead">{page.limitsLead}</p>

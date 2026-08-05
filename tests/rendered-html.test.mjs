@@ -54,6 +54,9 @@ test("renders help page", async () => {
   assert.match(html, /id="loop-sync"/);
   assert.match(html, /複数の連射パターンを同期する/);
   assert.match(html, /細かい動作を見る/);
+  assert.match(html, /id="composition"/);
+  assert.match(html, /マクロの全ステップを調べ/);
+  assert.match(html, /方向以外のボタンは抑制しません/);
   assert.match(html, /<h2>Profile JSON<\/h2>/);
   assert.match(html, /仕様と制限/);
   assert.match(html, /8192 bytes/);

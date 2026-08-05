@@ -350,6 +350,13 @@ a.share-account:hover { color: var(--accent); }
 .loop-sync-column details { margin-top: 22px; padding-top: 18px; border-top: 1px solid #dbe2ea; }
 .loop-sync-column summary { width: fit-content; color: var(--accent); cursor: pointer; font-size: 13px; font-weight: 600; }
 .loop-sync-column details > div { padding-top: 16px; }
+.composition-reference { scroll-margin-top: 24px; }
+.composition-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.composition-modes article { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
+.composition-modes h3 { margin: 0 0 9px; font-size: 15px; }
+.composition-modes p + p { margin-top: 10px; }
+.composition-example, .composition-note { color: var(--muted); font-size: 13px; }
+.composition-note { padding-top: 2px; }
 .limits-table { margin-bottom: 18px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .limits-row { display: grid; grid-template-columns: minmax(170px, .8fr) minmax(0, 1.2fr); }
 .limits-row + .limits-row { border-top: 1px solid var(--line); }
@@ -374,6 +381,7 @@ a.share-account:hover { color: var(--accent); }
 }
 
 @media (max-width: 600px) {
+  .composition-modes { grid-template-columns: 1fr; }
   .topbar { height: auto; padding: 12px 16px; align-items: flex-start; gap: 12px; flex-direction: column; }
   .brand-lockup h1 { font-size: 18px; }
   .header-actions { position: absolute; top: 8px; right: 12px; }
