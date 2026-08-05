@@ -51,8 +51,9 @@ test("renders help page", async () => {
   assert.match(html, /用語と仕組み/);
   assert.match(html, /編集画面/);
   assert.match(html, /<h2>共有<\/h2>/);
-  assert.match(html, /<h2>ループ同期<\/h2>/);
-  assert.match(html, /位相2で初めてボタンを押した場合/);
+  assert.match(html, /id="loop-sync"/);
+  assert.match(html, /複数の連射パターンを同期する/);
+  assert.match(html, /細かい動作を見る/);
   assert.match(html, /<h2>Profile JSON<\/h2>/);
   assert.match(html, /仕様と制限/);
   assert.match(html, /8192 bytes/);

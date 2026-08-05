@@ -338,6 +338,18 @@ a.share-account:hover { color: var(--accent); }
 .help-section ul, .help-section ol { margin: 0; padding-left: 22px; }
 .help-section li + li { margin-top: 7px; }
 .help-section code { padding: 2px 5px; border-radius: 4px; background: var(--subtle); color: #334155; font-size: .9em; }
+.loop-sync-column { margin-top: 56px; padding: 28px; border: 1px solid #cbd5e1; border-radius: 12px; background: #f8fafc; }
+.loop-sync-column h2 { margin-top: 6px; font-size: 21px; }
+.help-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.sync-pattern { margin: 20px 0; overflow-x: auto; }
+.sync-pattern table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff; }
+.sync-pattern th, .sync-pattern td { padding: 10px; border: 1px solid #dbe2ea; text-align: center; }
+.sync-pattern th:first-child { width: 112px; text-align: left; color: #475569; font-size: 12px; }
+.sync-pattern thead th { background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 600; }
+.sync-pattern td { color: #1e293b; font-size: 15px; font-weight: 700; }
+.loop-sync-column details { margin-top: 22px; padding-top: 18px; border-top: 1px solid #dbe2ea; }
+.loop-sync-column summary { width: fit-content; color: var(--accent); cursor: pointer; font-size: 13px; font-weight: 600; }
+.loop-sync-column details > div { padding-top: 16px; }
 .limits-table { margin-bottom: 18px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .limits-row { display: grid; grid-template-columns: minmax(170px, .8fr) minmax(0, 1.2fr); }
 .limits-row + .limits-row { border-top: 1px solid var(--line); }
