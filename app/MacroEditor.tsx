@@ -70,7 +70,7 @@ function OutputToggles({ mask, onChange, twoPlayerOutputs, allowed = 0xffffff }:
   );
 }
 
-function IntegerInput({ value, min, max, onCommit, ariaLabel }: { value: number; min: number; max: number; onCommit: (value: number) => void; ariaLabel: string }) {
+function IntegerInput({ value, min, max, onCommit, ariaLabel, disabled = false }: { value: number; min: number; max: number; onCommit: (value: number) => void; ariaLabel: string; disabled?: boolean }) {
   const [text, setText] = useState(String(value));
   function commit() {
     const parsed = Number(text);
@@ -78,7 +78,7 @@ function IntegerInput({ value, min, max, onCommit, ariaLabel }: { value: number;
     setText(String(next));
     if (next !== value) onCommit(next);
   }
-  return <input aria-label={ariaLabel} type="number" min={min} max={max} step="1" value={text} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setText(event.target.value)} onBlur={commit} onKeyDown={(event) => {
+  return <input aria-label={ariaLabel} disabled={disabled} type="number" min={min} max={max} step="1" value={text} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setText(event.target.value)} onBlur={commit} onKeyDown={(event) => {
     if (event.key === "Enter") event.currentTarget.blur();
     if (event.key === "Escape") { setText(String(value)); event.currentTarget.blur(); }
   }} />;
@@ -564,7 +564,7 @@ function SequenceEditor({ sequence, frameStep, twoPlayerOutputs, bindings, updat
       <div className="behavior-strip macro-behavior">
         <label className="control"><span>{t("再生", "Playback")}</span><select disabled={!bindings.length} value={loopValue} onChange={(e) => setBindingMode("loop", e.target.value === "loop")}><option value="once">{t("1回再生", "Play once")}</option><option value="loop">{t("押している間反復", "Repeat while held")}</option>{loopValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
         <label className="control"><span>{t("離したとき", "On release")}</span><select disabled={!bindings.length} value={releaseValue} onChange={(e) => setBindingMode("cancelOnRelease", e.target.value === "cancel")}><option value="complete">{t("現在の再生を完了", "Finish playback")}</option><option value="cancel">{t("すぐに中断", "Stop immediately")}</option>{releaseValue === "mixed" && <option value="mixed">{t("入力ごとに異なる", "Varies by input")}</option>}</select></label>
-        <label className="control loop-start-control"><span>{t("ループ開始ステップ", "Loop start step")}</span><IntegerInput key={`loop-${sequence.loopStart}-${sequence.steps.length}`} ariaLabel={t("ループ開始ステップ", "Loop start step")} value={sequence.loopStart + 1} min={1} max={sequence.steps.length} onCommit={(value) => { updateSequence((s) => { s.loopStart = value - 1; }); if (value !== 1) setLoopSync(false); }} /></label>
+        <label className="control loop-start-control"><span>{t("ループ開始ステップ", "Loop start step")}</span><IntegerInput key={`loop-${sequence.loopStart}-${sequence.steps.length}`} disabled={loopSync} ariaLabel={t("ループ開始ステップ", "Loop start step")} value={sequence.loopStart + 1} min={1} max={sequence.steps.length} onCommit={(value) => { updateSequence((s) => { s.loopStart = value - 1; }); if (value !== 1) setLoopSync(false); }} /></label>
         <label className="control"><span>{t("合成", "Composition")}</span><select value={sequence.composition} onChange={(event) => setComposition(event.target.value as CompositionMode)}><option value="or">OR</option><option value="autoLever">{t("自動", "Automatic")}</option><option value="custom">{t("カスタム", "Custom")}</option></select></label>
         <label className="control check-control"><span>{t("同期", "Sync")}</span><span className="inline-check"><input type="checkbox" disabled={!bindings.length} checked={loopSync} onChange={(event) => setLoopSync(event.target.checked)} />{t("ループ同期", "Loop Sync")}</span></label>
       </div>

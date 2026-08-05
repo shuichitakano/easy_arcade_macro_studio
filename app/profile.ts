@@ -82,6 +82,7 @@ export function localizeProfileMessage(message: string, locale: "ja" | "en") {
     "ループ同期には先頭からの保持中反復が必要です": "Loop Sync requires repeat-while-held playback starting at the first step",
     "ステートセレクタの占有マスクが重複しています": "State selector occupancy masks overlap",
     "v1.0ではマクロの入力抑制を使用できません": "Macro input suppression cannot be exported as v1.0",
+    "v1.0移行後にマクロの合成結果が変わります": "Macro composition would change after v1.0 migration",
     "v1.0ではループ同期を使用できません": "Loop Sync cannot be exported as v1.0",
     "v1.0ではステートセレクタの占有マスクを使用できません": "State selector occupancy masks cannot be exported as v1.0",
     "マクロ割り当てのSet IDが不正です": "A macro assignment has an invalid Set ID",
@@ -265,7 +266,7 @@ export function bindingsFor(profile: Profile, sequenceId: number) {
 
 export function legacyExportIssues(profile: Profile): string[] {
   const issues: string[] = [];
-  if (profile.sequences.some((sequence) => sequence.suppressionMask !== 0)) issues.push("v1.0ではマクロの入力抑制を使用できません");
+  if (profile.sequences.some((sequence) => sequence.suppressionMask !== automaticSuppressionMask(sequence))) issues.push("v1.0移行後にマクロの合成結果が変わります");
   if (profile.sequenceBindings.some((binding) => binding.loopSync)) issues.push("v1.0ではループ同期を使用できません");
   if (profile.selectors.some((selector) => selector.occupancyMask !== 0)) issues.push("v1.0ではステートセレクタの占有マスクを使用できません");
   return issues;

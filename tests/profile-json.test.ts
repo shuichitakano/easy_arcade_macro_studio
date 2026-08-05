@@ -216,21 +216,14 @@ test("Loop Sync and masks round-trip through the binary format", () => {
 
 test("v1.0 export remains available for compatible profiles", () => {
   const source = sampleProfile();
-  source.sequences[0].composition = "or";
-  source.sequences[0].suppressionMask = 0;
   source.selectors[0].occupancyMask = 0;
   const bytes = compileProfile(source, "1.0");
   assert.equal(bytes[5], 0);
-  const imported = withoutMetadata(source);
-  imported.sequences[0].composition = "autoLever";
-  imported.sequences[0].suppressionMask = automaticSuppressionMask(imported.sequences[0]);
-  assert.deepEqual(parseProfile(bytes), imported);
+  assert.deepEqual(parseProfile(bytes), withoutMetadata(source));
 });
 
 test("v1.0 imports migrate every macro to automatic composition", () => {
   const source = sampleProfile();
-  source.sequences[0].composition = "or";
-  source.sequences[0].suppressionMask = 0;
   source.selectors[0].occupancyMask = 0;
   const imported = parseProfile(compileProfile(source, "1.0"));
   assert.equal(imported.sequences[0].composition, "autoLever");
@@ -239,8 +232,9 @@ test("v1.0 imports migrate every macro to automatic composition", () => {
 
 test("v1.0 export never drops new behavior silently", () => {
   const source = sampleProfile();
-  assert.throws(() => compileProfile(source, "1.0"), /入力抑制/);
-  source.sequences[0].composition = "or"; source.sequences[0].suppressionMask = 0; source.sequenceBindings[0].loop = true; source.sequenceBindings[0].loopSync = true;
+  source.sequences[0].composition = "or"; source.sequences[0].suppressionMask = 0;
+  assert.throws(() => compileProfile(source, "1.0"), /合成結果/);
+  source.sequences[0].composition = "autoLever"; source.sequences[0].suppressionMask = automaticSuppressionMask(source.sequences[0]); source.sequenceBindings[0].loop = true; source.sequenceBindings[0].loopSync = true;
   assert.throws(() => compileProfile(source, "1.0"), /ループ同期/);
   source.sequenceBindings[0].loopSync = false; source.selectors[0].occupancyMask = 1;
   assert.throws(() => compileProfile(source, "1.0"), /占有マスク/);
