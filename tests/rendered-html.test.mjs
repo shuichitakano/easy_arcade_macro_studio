@@ -56,7 +56,7 @@ test("renders help page", async () => {
   assert.match(html, /細かい動作を見る/);
   assert.match(html, /id="composition"/);
   assert.match(html, /マクロの全ステップを調べ/);
-  assert.match(html, /方向以外のボタンは抑制しません/);
+  assert.match(html, /方向以外のボタン入力は、マクロのボタン出力とOR合成されます/);
   assert.match(html, /<h2>Profile JSON<\/h2>/);
   assert.match(html, /仕様と制限/);
   assert.match(html, /8192 bytes/);
