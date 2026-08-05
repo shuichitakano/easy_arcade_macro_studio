@@ -52,7 +52,8 @@ test("renders help page", async () => {
   assert.match(html, /編集画面/);
   assert.match(html, /<h2>共有<\/h2>/);
   assert.match(html, /id="loop-sync"/);
-  assert.match(html, /複数の連射パターンを同期する/);
+  assert.match(html, /<h2>ループ同期<\/h2>/);
+  assert.doesNotMatch(html, /高度な使い方/);
   assert.match(html, /細かい動作を見る/);
   assert.match(html, /id="composition"/);
   assert.match(html, /マクロの全ステップを調べ/);

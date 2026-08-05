@@ -61,9 +61,8 @@ const content = {
       note: "抑制はマクロの開始から終了まで続き、何も出力しないステップでも解除されません。複数のマクロが重なった場合、後から起動したマクロは、抑制対象にした直接入力と先に起動したマクロ出力を置き換えます。抑制対象外の出力はORで残ります。",
     },
     loopSync: {
-      eyebrow: "高度な使い方",
-      title: "複数の連射パターンを同期する",
-      lead: "ループ同期は、複数のボタンに分けた連射や反復シーケンスを、共通のリズムで動かすための機能です。ボタンを押すタイミングが違っても、各出力の位置関係を一定に保てます。",
+      title: "ループ同期",
+      lead: "複数のボタンに分けた連射や反復シーケンスを、共通のリズムで動かすための機能です。ボタンを押すタイミングが違っても、各出力の位置関係を一定に保てます。",
       phase: "位相",
       rows: [{ name: "マクロ α", values: ["A", "·", "·", "·"] }, { name: "マクロ β", values: ["·", "B", "·", "·"] }],
       caption: "αとβを別々のトリガーへ割り当てます。βを後から押しても、Bは常にAの1 tick後に出力されます。高度な連射、交互撃ち、複数ボタンの周期制御などに利用できます。",
@@ -125,9 +124,8 @@ const content = {
       note: "Suppression remains active from macro start to finish, including steps that currently output nothing. When macros overlap, a later macro replaces direct input and earlier macro output only on the outputs it suppresses. Everything else remains combined with OR.",
     },
     loopSync: {
-      eyebrow: "Advanced technique",
-      title: "Synchronize multiple rapid-fire patterns",
-      lead: "Loop Sync runs rapid-fire and repeating sequences assigned to separate buttons on one shared rhythm. Their relative output timing stays fixed even when the triggers are pressed at different times.",
+      title: "Loop Sync",
+      lead: "This runs rapid-fire and repeating sequences assigned to separate buttons on one shared rhythm. Their relative output timing stays fixed even when the triggers are pressed at different times.",
       phase: "Phase",
       rows: [{ name: "Macro α", values: ["A", "·", "·", "·"] }, { name: "Macro β", values: ["·", "B", "·", "·"] }],
       caption: "Assign α and β to separate triggers. Even if β is pressed later, B is always output one tick after A. This supports advanced rapid fire, alternating shots, and periodic control of several buttons.",
@@ -146,7 +144,7 @@ export function HelpContent() {
     <header className="help-topbar"><div className="help-brand"><Image className="brand-icon" src="/favicon.svg" alt="" width={28} height={28} /><strong>EASY ARCADE Macro Studio</strong></div><div className="help-actions"><LanguageSwitch /><Link href="/">{page.back}</Link></div></header>
     <article className="help-content">
       <h1>{page.conceptsTitle}</h1><p className="help-lead">{page.conceptsLead}</p>
-      {page.concepts.map((section, index) => <div key={section.title}><section className="help-section"><h2>{section.title}</h2>{index === 0 && <div className="concept-flow" aria-label={page.flowLabel}><span>{page.flow[0]}</span><b>→</b><span>{page.flow[1]}</span><b>→</b><span>{page.flow[2]}</span></div>}{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>{index === 2 && <><section className="help-section composition-reference" id="composition"><h2>{page.composition.title}</h2><p>{page.composition.lead}</p><div className="composition-modes">{page.composition.modes.map((mode) => <article key={mode.name}><h3>{mode.name}</h3><p>{mode.description}</p><p className="composition-example">{mode.example}</p></article>)}</div><p className="composition-note">{page.composition.note}</p></section><section className="help-section loop-sync-reference" id="loop-sync"><span className="help-eyebrow">{page.loopSync.eyebrow}</span><h2>{page.loopSync.title}</h2><p>{page.loopSync.lead}</p><div className="sync-pattern"><table><thead><tr><th>{page.loopSync.phase}</th>{[1, 2, 3, 4].map((phase) => <th key={phase}>{phase}</th>)}</tr></thead><tbody>{page.loopSync.rows.map((row) => <tr key={row.name}><th>{row.name}</th>{row.values.map((value, valueIndex) => <td key={valueIndex}>{value}</td>)}</tr>)}</tbody></table></div><p>{page.loopSync.caption}</p><details><summary>{page.loopSync.detailsLabel}</summary><div>{page.loopSync.details.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div></details></section></>}</div>)}
+      {page.concepts.map((section, index) => <div key={section.title}><section className="help-section"><h2>{section.title}</h2>{index === 0 && <div className="concept-flow" aria-label={page.flowLabel}><span>{page.flow[0]}</span><b>→</b><span>{page.flow[1]}</span><b>→</b><span>{page.flow[2]}</span></div>}{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>{index === 2 && <><section className="help-section composition-reference" id="composition"><h2>{page.composition.title}</h2><p>{page.composition.lead}</p><div className="composition-modes">{page.composition.modes.map((mode) => <article key={mode.name}><h3>{mode.name}</h3><p>{mode.description}</p><p className="composition-example">{mode.example}</p></article>)}</div><p className="composition-note">{page.composition.note}</p></section><section className="help-section loop-sync-reference" id="loop-sync"><h2>{page.loopSync.title}</h2><p>{page.loopSync.lead}</p><div className="sync-pattern"><table><thead><tr><th>{page.loopSync.phase}</th>{[1, 2, 3, 4].map((phase) => <th key={phase}>{phase}</th>)}</tr></thead><tbody>{page.loopSync.rows.map((row) => <tr key={row.name}><th>{row.name}</th>{row.values.map((value, valueIndex) => <td key={valueIndex}>{value}</td>)}</tr>)}</tbody></table></div><p>{page.loopSync.caption}</p><details><summary>{page.loopSync.detailsLabel}</summary><div>{page.loopSync.details.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div></details></section></>}</div>)}
       <h1 className="help-subheading">{page.editorsTitle}</h1><p className="help-lead">{page.editorsLead}</p>
       {page.editors.map((section) => <section className="help-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
       <h1 className="help-subheading">{page.limitsTitle}</h1><p className="help-lead">{page.limitsLead}</p>

@@ -338,17 +338,15 @@ a.share-account:hover { color: var(--accent); }
 .help-section ul, .help-section ol { margin: 0; padding-left: 22px; }
 .help-section li + li { margin-top: 7px; }
 .help-section code { padding: 2px 5px; border-radius: 4px; background: var(--subtle); color: #334155; font-size: .9em; }
-.loop-sync-reference h2 { margin-top: 6px; }
-.help-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .sync-pattern { margin: 20px 0; overflow-x: auto; }
 .sync-pattern table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff; }
 .sync-pattern th, .sync-pattern td { padding: 10px; border: 1px solid #dbe2ea; text-align: center; }
 .sync-pattern th:first-child { width: 112px; text-align: left; color: #475569; font-size: 12px; }
 .sync-pattern thead th { background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 600; }
 .sync-pattern td { color: #1e293b; font-size: 15px; font-weight: 700; }
-.loop-sync-reference details { margin-top: 22px; padding-top: 18px; border-top: 1px solid #dbe2ea; }
+.loop-sync-reference details { margin-top: 16px; }
 .loop-sync-reference summary { width: fit-content; color: var(--accent); cursor: pointer; font-size: 13px; font-weight: 600; }
-.loop-sync-reference details > div { padding-top: 16px; }
+.loop-sync-reference details > div { padding: 14px 0 0 14px; border-left: 2px solid #dbe2ea; }
 .composition-reference { scroll-margin-top: 24px; }
 .composition-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
 .composition-modes article { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
